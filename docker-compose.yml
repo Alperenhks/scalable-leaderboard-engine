@@ -1,0 +1,76 @@
+# Panteon Scalable Leaderboard Engine — yerel geliştirme altyapısı
+#
+# Amaç: projeyi inceleyen kişinin PostgreSQL/Redis/MongoDB kurmakla
+# uğraşmadan `docker compose up -d` ile tüm bağımlılıkları ayağa kaldırması.
+#
+# Tüm servislerde healthcheck tanımlıdır: Node sunucusu, veritabanları
+# gerçekten sorgu kabul eder duruma gelmeden başlamaz. Yalnızca konteynerin
+# "çalışıyor" olması yeterli değildir — Postgres ve Mongo, port açıldıktan
+# sonra da birkaç saniye başlatma işlemi yürütür ve bu aralıkta gelen
+# bağlantılar hata verir.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: leaderboard-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: leaderboard
+      POSTGRES_PASSWORD: leaderboard
+      POSTGRES_DB: leaderboard
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # -U ve -d verilmezse pg_isready varsayılan kullanıcıya bakar ve
+      # veritabanı henüz hazır değilken yanlışlıkla "hazır" raporlayabilir.
+      test: ['CMD-SHELL', 'pg_isready -U leaderboard -d leaderboard']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: leaderboard-redis
+    restart: unless-stopped
+    # AOF: yeniden başlatmada canlı liderlik tablosunun kaybolmaması için.
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  mongo:
+    image: mongo:7
+    container_name: leaderboard-mongo
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'mongosh',
+          '--quiet',
+          '--eval',
+          "db.adminCommand('ping').ok",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  postgres-data:
+  redis-data:
+  mongo-data:

@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "resolvePackageJsonExports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": false,
+    "strictBindCallApply": false,
+    "noFallthroughCasesInSwitch": false,
+    // describe/it/expect global'lerini açıkça yükler. Olmadan tsc yine çalışır
+    // (tüm @types/* otomatik yüklenir), ancak IDE dil sunucusu spec dosyalarını
+    // proje kapsamı dışında değerlendirdiğinde "'expect' adı bulunamıyor" verir.
+    "types": ["node", "jest"]
+  },
+  // Kapsam açıkça belirtilir; aksi halde dizin kökünden ne bulunacağı
+  // dil sunucusunun sezgisine kalır.
+  "include": ["src/**/*", "test/**/*", "prisma.config.ts"],
+  "exclude": ["node_modules", "dist", "generated"]
+}

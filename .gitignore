@@ -141,3 +141,19 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# AI agent skill klasörleri — yerel geliştirme aracı dosyaları, repoya dahil edilmez
+.agents/
+.claude/
+.windsurf/
+.cursor/
+skills-lock.json
+
+# Ortam değişkenleri (her seviyede)
+.env
+**/.env
+!**/.env.example
+
+# Prisma tarafından üretilen client (npx prisma generate ile yeniden oluşturulur)
+/generated/prisma
+
