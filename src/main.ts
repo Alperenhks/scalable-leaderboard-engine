@@ -15,6 +15,17 @@ async function bootstrap() {
     new FastifyAdapter({ trustProxy: true }),
   );
 
+  // Tarayıcıdan gelen istekler için CORS: yerel geliştirme ortamı ve
+  // Vercel'in ürettiği tüm canlı/preview alan adları kabul edilir.
+  app.enableCors({
+    origin: [
+      'http://localhost:3000', // Senin bilgisayarındaki test ortamı
+      /^https:\/\/.*\.vercel\.app$/, // Vercel'in üreteceği TÜM canlı ve test linkleri
+    ],
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+  });
+
   // Tüm iş uçları /api altında toplanır. Kök yol hariç tutulur: konteyner
   // sağlık probu ve mevcut e2e testi GET / bekliyor.
   app.setGlobalPrefix('api', { exclude: ['/'] });
