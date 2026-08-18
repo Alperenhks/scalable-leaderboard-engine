@@ -142,6 +142,11 @@ export class AuthService {
     switch (mode) {
       case 'top':
         return 0;
+      // İlk 100'ün içinde ama zirvede değil. Case'in "ilk 100'ü görüyorum
+      // ama kendimi bulamıyorum" şikâyeti tam bu oyuncunun durumudur:
+      // tabloda görünür, ancak kaydırmadan kendini fark edemez.
+      case 'contender':
+        return Math.min(total - 1, 52);
       case 'mid':
         return Math.floor(total / 2);
       // Asıl gösterilmek istenen senaryo: ilk 100'ün dışı. Tablo 100'den

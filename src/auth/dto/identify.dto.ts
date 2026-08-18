@@ -29,8 +29,8 @@ export class IdentifyDto {
    * oyuncuyu döndürür.
    */
   @IsOptional()
-  @IsIn(['top', 'mid', 'outside', 'unranked', 'random'])
-  mode?: 'top' | 'mid' | 'outside' | 'unranked' | 'random';
+  @IsIn(['top', 'contender', 'mid', 'outside', 'unranked', 'random'])
+  mode?: 'top' | 'contender' | 'mid' | 'outside' | 'unranked' | 'random';
 
   /** Sezon bağlamı — `mode` ile oyuncu seçilirken hangi tabloya bakılacağı. */
   @IsSeasonId()
