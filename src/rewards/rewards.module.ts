@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { RewardsController } from './rewards.controller';
 import { RewardsService } from './rewards.service';
+import { PrizeProjectionService } from './prize-projection.service';
 import { RewardsScheduler } from './rewards.scheduler';
 import { LeaderboardModule } from '../leaderboard/leaderboard.module';
 
@@ -12,7 +13,7 @@ import { LeaderboardModule } from '../leaderboard/leaderboard.module';
 @Module({
   imports: [LeaderboardModule],
   controllers: [RewardsController],
-  providers: [RewardsService, RewardsScheduler],
+  providers: [RewardsService, RewardsScheduler, PrizeProjectionService],
   exports: [RewardsService],
 })
 export class RewardsModule {}

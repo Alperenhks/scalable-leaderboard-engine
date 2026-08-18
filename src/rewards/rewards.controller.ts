@@ -1,9 +1,12 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { RewardsService } from './rewards.service';
+import { PrizeProjectionService } from './prize-projection.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
 import { DistributeSeasonDto } from './dto/distribute-season.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { Roles } from '../auth/roles.decorator';
 import { Role } from '../auth/jwt.types';
 import {
@@ -26,6 +29,7 @@ export class RewardsController {
   constructor(
     private readonly rewards: RewardsService,
     private readonly leaderboard: LeaderboardService,
+    private readonly projection: PrizeProjectionService,
   ) {}
 
   /**
@@ -90,6 +94,28 @@ export class RewardsController {
         remaining: REMAINDER_SHARE,
       },
     };
+  }
+
+  /**
+   * "Sezon şu an bitse kim ne kazanır?" — ilk 100'ün tahmini payları.
+   *
+   * Hesap sunucuda yapılır çünkü 4-100 aralığındaki pay skora ORANTILIDIR:
+   * bir oyuncunun payını bilmek ilk 100'ün tüm skorlarının toplamını
+   * gerektirir. İlk 100 dışındaki oyuncunun istemcisinde bu veri yoktur.
+   *
+   * Kimlik OPSİYONELDİR: token'sız istek yalnızca tabloyu alır, token'lı
+   * istek ek olarak `me` alanında kendi payını da alır.
+   */
+  @Get('projection')
+  @UseGuards(OptionalJwtAuthGuard)
+  async getProjection(
+    @Query() query: SeasonQueryDto,
+    @CurrentUser('sub') userId?: string,
+  ) {
+    return this.projection.project(
+      query.seasonId ?? getCurrentSeasonId(),
+      userId,
+    );
   }
 
   /**

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { RolesGuard } from './roles.guard';
+import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
 
 /**
  * Kimlik doğrulama altyapısı.
@@ -24,7 +25,7 @@ import { RolesGuard } from './roles.guard';
       }),
     }),
   ],
-  providers: [JwtAuthGuard, RolesGuard],
-  exports: [JwtAuthGuard, RolesGuard, JwtModule],
+  providers: [JwtAuthGuard, RolesGuard, OptionalJwtAuthGuard],
+  exports: [JwtAuthGuard, RolesGuard, OptionalJwtAuthGuard, JwtModule],
 })
 export class AuthModule {}

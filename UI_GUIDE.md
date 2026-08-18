@@ -160,26 +160,58 @@ useEffect(() => {
 
 Son 24 saatte rengi değiştir (turuncu → kırmızı) — aciliyet hissi.
 
-### Ödül tahmini — güçlü bir dokunuş
+### Ödül tahmini — `GET /api/rewards/projection`
 
-`distribution` oranları API'den geliyor. Her satırda o oyuncunun **kazanacağı tahmini ödülü** gösterebilirsin:
+Hesap **backend'de** yapılır, istemcide değil. Tek istek her satırın tahmini payını ve senin kendi payını verir:
+
+```jsonc
+{
+  "poolAmount": "94018794.62",
+  "entries": [
+    { "rank": 1, "userId": "cmsx...", "amount": "18803759.40" },
+    { "rank": 4, "userId": "cmsx...", "amount": "585956.83" }
+  ],
+  "me": {
+    "rank": 121, "amount": "0.00",
+    "isEligible": false,
+    "pointsToEligible": 68836
+  }
+}
+```
+
+**Neden istemcide hesaplamıyoruz:** 4-100 arası pay skora orantılı; bir kişinin payı için ilk 100'ün *tüm* skor toplamı gerekir. İlk 100 dışındaki oyuncunun elinde o veri yok. Ayrıca backend, gerçek dağıtımla **aynı fonksiyonu** kullanıyor — gösterilen tutar ödenecek tutardan asla ayrışmaz.
+
+Listede `entries` içindeki `amount`'ı `userId` ile eşleştirerek göster:
+
+```jsx
+const prizeByUser = useMemo(
+  () => new Map(projection.entries.map(e => [e.userId, e.amount])),
+  [projection]
+);
+
+<LeaderboardRow entry={entry} prize={prizeByUser.get(entry.userId)} />
+```
 
 ```
-🥇  1  demo_neon_pilot   4.5M   ₺18.803.752   ← havuz × 0.20
-🥈  2  demo_cosmic_baron 4.4M   ₺14.102.814   ← havuz × 0.15
-🥉  3  demo_neon_baron   4.4M    ₺9.401.876   ← havuz × 0.10
-    4  demo_swift_hawk   4.3M      ₺521.043   ← kalan %55'ten payı
+🥇  1  demo_neon_pilot   4.5M   ₺18.803.759
+🥈  2  demo_cosmic_baron 4.4M   ₺14.102.819
+🥉  3  demo_neon_baron   4.4M    ₺9.401.879
+    4  demo_iron_tiger   4.4M      ₺585.957
 ```
 
-4-100 arası pay **skora orantılıdır** (sıraya değil):
+### `pointsToEligible` — en güçlü motivasyon sinyali
 
-```js
-// 4-100 arasındaki bir oyuncunun tahmini payı
-const tailScores = entries.slice(3, 100).reduce((s, e) => s + e.score, 0);
-const share = (poolMinor * 0.55 * entry.score) / tailScores;
+Oyuncu ilk 100 dışındaysa (`isEligible: false`) API kaç puan gerektiğini söyler:
+
+```
+┌──────────────────────────────────────────┐
+│  Ödül almaya 68.836 puan kaldın          │
+│  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░  %98               │
+│  İlk 100'e gir, ₺497.536 kazanmaya başla │
+└──────────────────────────────────────────┘
 ```
 
-Bu, oyuncuya *"biraz daha oynarsam payım artar"* dedirtir — tam da idle oyunun istediği şey.
+Bu, oyuncuya *"biraz daha oynarsam ödül alırım"* dedirtir — tam da idle oyunun istediği şey. `isEligible: true` ise bunun yerine `me.amount`'ı kutla: *"Şu an ₺18.803.759 kazanıyorsun!"*
 
 ### Ödül geçmişi
 
@@ -282,6 +314,7 @@ Liderlik tablosu canlı hissettirmeli ama sunucuyu yormamalı:
 | `/leaderboard` | 30 sn | Zirve yavaş değişir |
 | `/leaderboard/around` | 15 sn | Kendi sıran daha kritik |
 | `/rewards/season` | 60 sn | Havuz yavaş büyür; geri sayım istemcide |
+| `/rewards/projection` | 60 sn | Ödül tahminleri yavaş değişir |
 
 Sekme arka plandayken polling'i **durdur** (`document.visibilityState`).
 

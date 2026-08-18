@@ -207,6 +207,44 @@ Yalnızca havuz tutarı gerekiyorsa hafif alternatif.
 
 > **Para alanları daima string'dir.** `poolAmount`, `balance`, `amount` — hepsi. JSON `Number`'a çevirirsen kuruş hassasiyeti kaybolur. Görüntülemek için string'i olduğu gibi formatla, aritmetik yapman gerekiyorsa önce kuruşa (× 100) çevirip tamsayı ile çalış.
 
+### `GET /api/rewards/projection` — "şu an bitse ne kazanırım?"
+
+Kimlik **opsiyonel**. Token'sız istek yalnızca ilk 100'ün tahmini paylarını döndürür; token'lı istek ek olarak `me` alanında kendi payını da alır.
+
+```jsonc
+{
+  "seasonId": "2026-W34",
+  "poolAmount": "94018794.62",
+  "rewardedPlayerCount": 100,
+  "entries": [
+    { "rank": 1, "userId": "cmsx...", "amount": "18803759.40" },
+    { "rank": 2, "userId": "cmsx...", "amount": "14102819.19" },
+    { "rank": 4, "userId": "cmsx...", "amount": "585956.83" }
+  ],
+  "me": {
+    "rank": 121,
+    "score": 3696088,
+    "amount": "0.00",
+    "isEligible": false,
+    "pointsToEligible": 68836      // ilk 100'e girmek için gereken puan
+  }
+}
+```
+
+**Neden sunucuda hesaplanıyor:** 4-100 aralığındaki pay skora **orantılıdır** — bir oyuncunun payını bilmek ilk 100'ün *tüm* skorlarının toplamını gerektirir. İlk 100 dışındaki oyuncunun istemcisinde bu veri yoktur; sadece kendi payını öğrenmek için 100 satır çekmesi gerekirdi.
+
+Daha önemlisi: tahmin, gerçek dağıtımla **aynı fonksiyonu** (`allocatePrizePool`) kullanır. Ayrı bir formül yazılsaydı ikisi zamanla ayrışır ve oyuncuya gösterilen tutar ödenenden farklı olurdu.
+
+Doğrulandı: `entries` toplamı havuza **kuruşu kuruşuna eşittir**.
+
+| Alan | Anlamı |
+| --- | --- |
+| `me.amount` | Sezon şu an bitse kazanacağı tutar (string) |
+| `me.isEligible` | İlk 100'de mi — `false` ise `amount` `"0.00"` |
+| `me.pointsToEligible` | Ödül almaya başlamak için gereken puan; zaten alıyorsa `null` |
+
+`pointsToEligible` idle oyunda en güçlü motivasyon sinyalidir: *"68.836 puan daha kazan, ödül almaya başla."*
+
 ### `POST /api/rewards/distribute` 🔒 **admin**
 
 Dağıtımı elle tetikler. `seasonId` verilmezse bir önceki hafta.
@@ -307,6 +345,7 @@ Tüm hatalar Nest'in standart biçiminde döner:
 | `POST /api/score` | 🔒 | Skor artışı |
 | `GET /api/rewards/season` | ➖ | Geri sayım + oranlar |
 | `GET /api/rewards/pool` | ➖ | Havuz |
+| `GET /api/rewards/projection` | ➖/🔒 | Tahmini ödüller + kendi payın |
 | `POST /api/rewards/distribute` | 🔒 admin | Yıkıcı |
 | `GET /api/me` | 🔒 | Birleşik durum |
 | `GET /api/me/wallet` | 🔒 | Bakiye |
