@@ -151,11 +151,11 @@ API'yi tarayıcıdan çağıran bir istemci (web paneli, demo arayüzü) olduğu
 
 | Ayar | Değer |
 | --- | --- |
-| `origin` | `http://localhost:3000` ve `/^https:\/\/.*\.vercel\.app$/` |
+| `origin` | `http://localhost:3000` (Next.js), `http://localhost:5173` (Vite), `127.0.0.1` karşılıkları ve `/^https:\/\/.*\.vercel\.app$/` |
 | `methods` | `GET,HEAD,PUT,PATCH,POST,DELETE` |
 | `credentials` | `true` |
 
-İki origin bilinçli seçildi: yerel geliştirmede frontend `localhost:3000`'de çalışır, dağıtımda ise Vercel her deploy için farklı bir preview alan adı üretir (`proje-abc123.vercel.app`). Bunları tek tek listelemek her deploy'da yeni bir kod değişikliği gerektirirdi; regex bu yükü ortadan kaldırır.
+Origin listesi bilinçli seçildi: yerel geliştirmede frontend Next.js ile `localhost:3000`, Vite ile `localhost:5173` portunda çalışır (bazı tarayıcılar bunu `127.0.0.1` olarak çözdüğü için o karşılıkları da eklendi), dağıtımda ise Vercel her deploy için farklı bir preview alan adı üretir (`proje-abc123.vercel.app`). Bunları tek tek listelemek her deploy'da yeni bir kod değişikliği gerektirirdi; regex bu yükü ortadan kaldırır.
 
 Fastify adapter kullanıldığı için CORS `@fastify/cors` üzerinden işlenir — regex origin desteği buradan gelir; ek kurulum gerekmez.
 

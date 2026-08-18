@@ -19,7 +19,9 @@ async function bootstrap() {
   // Vercel'in ürettiği tüm canlı/preview alan adları kabul edilir.
   app.enableCors({
     origin: [
-      'http://localhost:3000', // Senin bilgisayarındaki test ortamı
+      'http://localhost:3000', // Next.js varsayılan portu
+      'http://localhost:5173', // Vite varsayılan portu
+      /^http:\/\/127\.0\.0\.1:(3000|5173)$/, // Bazı tarayıcılar localhost'u böyle çözer
       /^https:\/\/.*\.vercel\.app$/, // Vercel'in üreteceği TÜM canlı ve test linkleri
     ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',

@@ -359,7 +359,14 @@ Tüm hatalar Nest'in standart biçiminde döner:
 
 ## 7. CORS
 
-`http://localhost:3000` ve tüm `*.vercel.app` alan adları kabul edilir; `credentials: true` açıktır. Farklı bir port kullanacaksan `src/main.ts` içindeki origin listesine ekle.
+Kabul edilen origin'ler:
+
+- `http://localhost:3000` — Next.js varsayılanı
+- `http://localhost:5173` — Vite varsayılanı
+- `http://127.0.0.1:3000` ve `http://127.0.0.1:5173`
+- Tüm `*.vercel.app` alan adları
+
+`credentials: true` açıktır. Başka bir port kullanacaksan `src/main.ts` içindeki origin listesine ekle.
 
 ---
 
