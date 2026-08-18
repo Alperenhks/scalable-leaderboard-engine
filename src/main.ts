@@ -15,15 +15,31 @@ async function bootstrap() {
     new FastifyAdapter({ trustProxy: true }),
   );
 
-  // Tarayıcıdan gelen istekler için CORS: yerel geliştirme ortamı ve
-  // Vercel'in ürettiği tüm canlı/preview alan adları kabul edilir.
+  // Tarayıcıdan gelen istekler için CORS.
+  //
+  // Origin listesi `ALLOWED_ORIGINS` ortam değişkeninden okunur (virgülle
+  // ayrılmış). Tanımlıysa YALNIZCA o adresler kabul edilir — üretimde
+  // yapılması gereken budur.
+  //
+  // Tanımlı değilse geliştirme/demo varsayılanına düşülür: yerel portlar ve
+  // Vercel'in ürettiği tüm preview alan adları. Bu genişlik bilinçlidir çünkü
+  // Vercel her dağıtım için yeni bir alan adı üretir ve hepsini elle listelemek
+  // pratik değildir; ancak `credentials: true` ile birlikte herhangi bir
+  // `*.vercel.app` sitesinin kimlik taşıyan istek atabileceği anlamına gelir.
+  // Gerçek bir dağıtımda `ALLOWED_ORIGINS` mutlaka verilmelidir.
+  const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
   app.enableCors({
-    origin: [
-      'http://localhost:3000', // Next.js varsayılan portu
-      'http://localhost:5173', // Vite varsayılan portu
-      /^http:\/\/127\.0\.0\.1:(3000|5173)$/, // Bazı tarayıcılar localhost'u böyle çözer
-      /^https:\/\/.*\.vercel\.app$/, // Vercel'in üreteceği TÜM canlı ve test linkleri
-    ],
+    origin: allowedOrigins?.length
+      ? allowedOrigins
+      : [
+          'http://localhost:3000', // Next.js varsayılan portu
+          'http://localhost:5173', // Vite varsayılan portu
+          /^http:\/\/127\.0\.0\.1:(3000|5173)$/, // Bazı tarayıcılar localhost'u böyle çözer
+          /^https:\/\/.*\.vercel\.app$/, // Vercel'in preview/canlı adresleri
+        ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });

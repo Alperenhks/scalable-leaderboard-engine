@@ -3,6 +3,7 @@ import {
   minorUnitsToDecimalString,
   toMinorUnits,
   PoolCandidate,
+  decimalStringToMinorUnits,
 } from './reward-math';
 
 /** rank/score üretimi için kısa yardımcı. */
@@ -192,5 +193,45 @@ describe('para birimi dönüşümleri', () => {
     let pool = 0n;
     for (let i = 0; i < 3; i++) pool += toMinorUnits(0.1);
     expect(minorUnitsToDecimalString(pool)).toBe('0.30');
+  });
+});
+
+describe('decimalStringToMinorUnits', () => {
+  it('ondalık string"i float"a uğramadan kuruşa çevirir', () => {
+    expect(decimalStringToMinorUnits('0.00')).toBe(0n);
+    expect(decimalStringToMinorUnits('1.00')).toBe(100n);
+    expect(decimalStringToMinorUnits('0.01')).toBe(1n);
+    expect(decimalStringToMinorUnits('123.45')).toBe(12_345n);
+  });
+
+  it('şemadaki 4 ondalığı en yakın kuruşa yuvarlar', () => {
+    expect(decimalStringToMinorUnits('1.0000')).toBe(100n);
+    expect(decimalStringToMinorUnits('1.0049')).toBe(100n);
+    expect(decimalStringToMinorUnits('1.0050')).toBe(101n);
+    expect(decimalStringToMinorUnits('1.9999')).toBe(200n);
+  });
+
+  it('negatif tutarları korur', () => {
+    expect(decimalStringToMinorUnits('-1.50')).toBe(-150n);
+    expect(decimalStringToMinorUnits('-0.01')).toBe(-1n);
+  });
+
+  it('float aritmetiğinin bozduğu değerlerde bile kesindir', () => {
+    // 0.1 + 0.2 !== 0.3 sorununun para tarafındaki karşılığı: bu üç değer
+    // Number üzerinden toplanınca 1 kuruş sapma üretebilir.
+    const parcalar = ['0.10', '0.20', '19.99', '0.07'];
+    const toplam = parcalar.reduce(
+      (sum, p) => sum + decimalStringToMinorUnits(p),
+      0n,
+    );
+
+    expect(toplam).toBe(2036n);
+    expect(minorUnitsToDecimalString(toplam)).toBe('20.36');
+  });
+
+  it('büyük tutarlarda hassasiyet kaybetmez', () => {
+    // 94 milyon TL"lik havuz: Number.MAX_SAFE_INTEGER"a yaklaşmıyor ama
+    // disiplin büyük değerlerde de korunmalı.
+    expect(decimalStringToMinorUnits('94018764.62')).toBe(9_401_876_462n);
   });
 });

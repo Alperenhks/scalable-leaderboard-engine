@@ -43,6 +43,32 @@ export function toMinorUnits(amount: number): bigint {
   return BigInt(Math.round(amount * Number(MINOR_UNITS_PER_MAJOR)));
 }
 
+/**
+ * Ondalık bir para STRING'ini kuruşa çevirir — float'a hiç uğramadan.
+ *
+ * `toMinorUnits` `number` aldığı için çağıran taraf değeri önce float'a
+ * düşürmek zorunda kalır; Postgres'ten gelen `Decimal(18,4)` değerlerinde
+ * bunu yapmak tam da kaçınılan hassasiyet kaybını üretir. Burada dizgi
+ * doğrudan ayrıştırılır: tamsayı ve ondalık kısım ayrı ayrı `BigInt`'e
+ * çevrilir.
+ *
+ * Şema 4 ondalık tutar ama para birimi 2 kuruş kullanır; fazla basamaklar
+ * en yakın kuruşa yuvarlanır (yarım yukarı).
+ */
+export function decimalStringToMinorUnits(amount: string): bigint {
+  const negative = amount.trimStart().startsWith('-');
+  const [whole, fraction = ''] = amount.replace('-', '').trim().split('.');
+
+  // İlk iki basamak kuruş; üçüncü basamak yuvarlama kararını verir.
+  const cents = (fraction + '00').slice(0, 2);
+  const roundUp = Number((fraction + '000')[2]) >= 5;
+
+  let minor = BigInt(whole || '0') * MINOR_UNITS_PER_MAJOR + BigInt(cents);
+  if (roundUp) minor += 1n;
+
+  return negative ? -minor : minor;
+}
+
 export function minorUnitsToDecimalString(minor: bigint): string {
   const negative = minor < 0n;
   const abs = negative ? -minor : minor;
