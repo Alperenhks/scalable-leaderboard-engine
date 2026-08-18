@@ -2,11 +2,22 @@
 
 2 milyon günlük aktif kullanıcılı bir mobil idle oyun (ör. *Airport Master*) için tasarlanmış, tamamen **stateless** ve yatayda ölçeklenebilir Liderlik Tablosu API'si.
 
-> **Durum:** Skor gönderimi, canlı liderlik tablosu, JWT kimlik doğrulaması, "3 üst / 2 alt" penceresi, haftalık ödül dağıtımı, cüzdan/ödül geçmişi ve sezon geri sayımı çalışır durumda.
->
-> **Canlı API:** https://scalable-leaderboard-engine.onrender.com/api
->
-> **Frontend geliştiricisi:** Tam API sözleşmesi **[API.md](API.md)**.
+**Canlı API:** https://scalable-leaderboard-engine.onrender.com/api
+
+| Belge | İçerik |
+|---|---|
+| **[API.md](API.md)** | Tam API sözleşmesi — uçlar, tipler, örnek yanıtlar |
+| **[AI_WORKFLOW.md](AI_WORKFLOW.md)** | Geliştirme süreci, verilen kararlar, açık riskler |
+
+Skor gönderimi, canlı liderlik tablosu, JWT kimlik doğrulaması, "3 üst / 2 alt" penceresi, haftalık ödül dağıtımı, cüzdan/ödül geçmişi ve sezon geri sayımı çalışır durumdadır.
+
+---
+
+## İçindekiler
+
+- [Altyapı](#altyapı--tümü-bulutta) · [Mimari](#mimari-genel-bakış) · [Kurulum](#kurulum)
+- [API](#api) · [Performans](#performans--ölçülmüş) · [Ödül dağıtımı](#ödül-havuzu-ve-haftalık-dağıtım)
+- [Komutlar](#komutlar) · [Veri modeli](#veri-modeli) · [Proje yapısı](#proje-yapısı)
 
 ---
 
@@ -128,18 +139,11 @@ npx prisma db push
 
 #### Neon kullanıyorsanız: pooler endpoint'i
 
-`DATABASE_URL` Neon'un **pooler** (PgBouncer) endpoint'ine işaret eder — host adında `-pooler` geçer:
+`DATABASE_URL` Neon'un **pooler** (PgBouncer) endpoint'ine işaret etmelidir — host adında `-pooler` geçer.
 
-```
-postgresql://...@ep-xxx-pooler.c-6.eu-central-1.aws.neon.tech/neondb?sslmode=require
-                        ^^^^^^^
-```
+Sebep ölçümle doğrulandı: 400 eş zamanlı bağlantı denemesinde **pooler 179 bağlantı kabul ederken direct endpoint hiçbirini kabul edemedi (0/400).** Yatayda çoğaltılmış her instance kendi `pg.Pool`'unu tuttuğu için bu fark üretim ölçeğinde belirleyicidir.
 
-Sebep ölçümle doğrulanmıştır: 400 eş zamanlı bağlantı denemesinde **pooler 179 bağlantı kabul ederken, direct endpoint hiçbirini kabul edemedi (0/400).** Yatayda çoğaltılmış her instance kendi `pg.Pool`'unu tuttuğu için bu fark üretim ölçeğinde belirleyicidir.
-
-PgBouncer transaction mode bazı kurulumlarda interactive transaction ve prepared statement'ları bozar; bu proje için sınandı ve sorun çıkmadı — ödül dağıtımının dayandığı `$transaction`, rollback ve tekrarlı parametreli sorgular sorunsuz çalışıyor.
-
-> **DDL için not:** `prisma db push` ve doğrudan `CREATE TABLE` / `CREATE INDEX` komutları bu kurulumda pooler üzerinden sınandı ve çalıştı. Yine de uzun süren migration'larda sorun yaşarsanız, `-pooler` ekini geçici olarak kaldırıp **direct** endpoint üzerinden çalıştırmak güvenli yoldur.
+> Uzun süren migration'larda sorun yaşarsanız `-pooler` ekini geçici olarak kaldırın; DDL için direct endpoint daha güvenlidir.
 
 ### 6. Örnek veriyi yükleyin
 
@@ -171,275 +175,83 @@ Sunucu `http://localhost:8080` adresinde çalışır.
 
 Tüm iş uçları `/api` altındadır. Kök yol (`/`) sağlık kontrolü olarak prefix dışında tutulur.
 
+### Kimlik: login yok, "oyuncu seç" var
+
+Case bir login akışı istemiyor ama *"players should clearly see **their own** ranking"* diyor. İkisi çelişmez: sunucunun **kim olduğunu bilmesi** yeter, **kanıtlamasını istemek** gerekmez.
+
+Çözüm oyuncu kimliğine bürünmedir — şifre, kayıt, e-posta yoktur:
+
+```bash
+curl -X POST $BASE/auth/identify -H 'Content-Type: application/json' \
+  -d '{"mode":"outside"}'      # 121. sıradaki oyuncu olarak bak
+```
+
+`mode` değerleri her senaryoyu tek çağrıyla açar: `top` (zirve), `mid` (orta), **`outside`** (ilk 100 dışı — "3 üst / 2 alt" penceresi), `unranked` (`rank: null` ekranı), `random`. `{"role":"admin"}` eklenirse ödül dağıtımını denemek için admin token üretilir.
+
+> Üretilen **token gerçek bir JWT'dir** ve tüm korumalı uçlar onu normal guard'dan geçirir: auth mimarisi üretim kalitesindedir, yalnızca kimliği *kanıtlama* adımı demo gereği atlanmıştır. Gerçek bir oyunda bu ucun yerine oyunun kendi login'i gelir, arkasındaki hiçbir şey değişmez.
+>
+> **Üretim notu:** `role: "admin"` alanının istemciden kabul edilmesi demo içindir; gerçek dağıtımda kaldırılmalıdır.
+
+### Yetkilendirme — sıfır I/O
+
+Doğrulama tamamen bellekte yapılır: `JWT_SECRET` ile HMAC imza kontrolü. Ne Postgres'e ne Redis'e sorgu gider — 2M DAU'da her istekte bir kullanıcı sorgusu, bu mimarinin kaçındığı yükü geri getirirdi. Ölçüldü: doğrulama başına **22 mikrosaniye**.
+
+Kimlik token'ın `sub` alanından okunur; gövdeden `userId` kabul edilmez. Roller de (`player` / `admin`) token içinde taşınır, veritabanında tutulmaz.
+
+İki guard ayrı tutulmuştur: `JwtAuthGuard` *"kimsin?"* sorusunu yanıtlar (**401**), `RolesGuard` *"bunu yapmaya yetkin var mı?"* sorusunu (**403**). `roles` taşımayan token sıradan oyuncu sayılır — **varsayılan daima en az yetkidir.**
+
 ### CORS
 
-API'yi tarayıcıdan çağıran bir istemci (web paneli, demo arayüzü) olduğu için `main.ts` içinde CORS açıktır:
+`localhost:3000` (Next.js), `localhost:5173` (Vite), bunların `127.0.0.1` karşılıkları ve tüm `*.vercel.app` alan adları kabul edilir; `credentials: true` açıktır.
 
-| Ayar | Değer |
-| --- | --- |
-| `origin` | `http://localhost:3000` (Next.js), `http://localhost:5173` (Vite), `127.0.0.1` karşılıkları ve `/^https:\/\/.*\.vercel\.app$/` |
-| `methods` | `GET,HEAD,PUT,PATCH,POST,DELETE` |
-| `credentials` | `true` |
+Vercel her deploy için farklı bir preview alan adı ürettiğinden tek tek listelemek her dağıtımda kod değişikliği gerektirirdi; regex bu yükü kaldırır. Fastify adapter'da CORS `@fastify/cors` üzerinden işlenir, regex desteği oradan gelir.
 
-Origin listesi bilinçli seçildi: yerel geliştirmede frontend Next.js ile `localhost:3000`, Vite ile `localhost:5173` portunda çalışır (bazı tarayıcılar bunu `127.0.0.1` olarak çözdüğü için o karşılıkları da eklendi), dağıtımda ise Vercel her deploy için farklı bir preview alan adı üretir (`proje-abc123.vercel.app`). Bunları tek tek listelemek her deploy'da yeni bir kod değişikliği gerektirirdi; regex bu yükü ortadan kaldırır.
+> **Üretim notu:** `credentials: true` ile regex origin birlikte kullanıldığında `*.vercel.app` altındaki herhangi bir site kimlik bilgisi taşıyan istek atabilir. Gerçek dağıtımda origin listesi sabit bir alan adına daraltılmalı veya `ALLOWED_ORIGINS` ortam değişkeninden okunmalıdır.
 
-Fastify adapter kullanıldığı için CORS `@fastify/cors` üzerinden işlenir — regex origin desteği buradan gelir; ek kurulum gerekmez.
+### Uçlar
 
-> **Üretim notu:** `credentials: true` ile regex origin birlikte kullanıldığında, `*.vercel.app` altındaki **herhangi** bir site (başkasının Vercel projesi dahil) kimlik bilgisi taşıyan istek atabilir. Gerçek bir dağıtımda origin listesinin tek bir sabit alan adına daraltılması veya `ALLOWED_ORIGINS` ortam değişkeninden okunması gerekir.
+Tüm uçların tam sözleşmesi — istek/yanıt gövdeleri, doğrulama kuralları, örnek yanıtlar — **[API.md](API.md)** içindedir. Özet:
 
-### Oyuncu kimliği: login yok, "oyuncu seç" var
+| Uç | Kimlik | Ne yapar |
+| --- | --- | --- |
+| `POST /api/auth/identify` | ➖ | Oyuncu kimliği seçer, JWT üretir |
+| `GET /api/auth/players` | ➖ | Oyuncu listesi / arama |
+| `GET /api/leaderboard` | ➖ | İlk N (limit ≤ 100) |
+| `GET /api/leaderboard/around` | 🔒 | ⭐ 3 üst + kendisi + 2 alt penceresi |
+| `GET /api/leaderboard/rank` | 🔒 | Yalnızca kendi sırası |
+| `POST /api/score` | 🔒 | Skoru **artırır** (delta), havuza %2 katkı |
+| `GET /api/rewards/season` | ➖ | Geri sayım, havuz, dağıtım oranları |
+| `GET /api/rewards/pool` | ➖ | Yalnızca havuz tutarı |
+| `GET /api/rewards/projection` | ➖/🔒 | Tahmini ödüller + kendi payı |
+| `POST /api/rewards/distribute` | 🔒 admin | Dağıtımı tetikler (yıkıcı) |
+| `GET /api/me` | 🔒 | Sıra + skor + bakiye + son ödül |
+| `GET /api/me/wallet` | 🔒 | Cüzdan bakiyesi |
+| `GET /api/me/rewards` | 🔒 | Ödül geçmişi |
 
-Case bir login akışı istemiyor ama *"players should clearly see **their own** ranking"* diyor. Bu ikisi çelişmez: sunucunun **kim olduğunu bilmesi** yeter, **kanıtlamasını istemek** gerekmez.
+Üç tasarım kararı uçların tamamını belirler:
 
-Çözüm **oyuncu kimliğine bürünmedir**: istemci hangi oyuncu olarak baktığını söyler, sunucu o oyuncu için imzalı bir JWT üretir. Şifre, kayıt, e-posta yoktur.
+- **`delta` mutlak skor değildir.** İstemci fark gönderir, sunucu `ZINCRBY` ile uygular — iki istemci aynı anda yazdığında kayıp güncelleme olmaz.
+- **`userId` ve `seasonId` istek gövdesinde kabul edilmez.** Biri token'dan, diğeri sunucunun ISO haftasından gelir; gönderilirse `forbidNonWhitelisted` sayesinde istek `400` alır. Aksi halde biri kimlik sahteciliğine, diğeri kapanmış sezona yazmaya açık olurdu.
+- **`rank: null` asla `0`'a çevrilmez.** `0` birincilik anlamına gelirdi; sıralamada yer almamak ayrı bir durumdur.
+
+### Örnek istek
 
 ```bash
-curl -X POST http://localhost:8080/api/auth/identify \
-  -H 'Content-Type: application/json' -d '{"mode":"outside"}'
-```
+BASE=https://scalable-leaderboard-engine.onrender.com/api
+TOKEN=$(curl -s -X POST $BASE/auth/identify \
+  -H 'Content-Type: application/json' -d '{"mode":"outside"}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
 
-`mode` jürinin tek tıkla her senaryoyu denemesi içindir:
-
-| mode | Ne döndürür | Hangi özelliği açar |
-| --- | --- | --- |
-| `top` | 1. sıradaki oyuncu | Zirve görünümü |
-| `mid` | Tablonun ortası | Normal oyuncu |
-| `outside` | 121. sıra (ilk 100 dışı) | **"3 üst / 2 alt" penceresi** |
-| `unranked` | Bu hafta oynamamış oyuncu | `rank: null` ekranı |
-| `random` | Rastgele | Genel gezinme |
-
-`{"role":"admin"}` eklenirse admin yetkili token üretilir — ödül dağıtımını canlı denemek için.
-
-> **Token gerçek bir JWT'dir** ve tüm korumalı uçlar onu normal guard'dan geçirir. Yani auth **mimarisi üretim kalitesindedir**; yalnızca kimliği kanıtlama adımı demo gereği atlanmıştır. Gerçek bir oyunda bu ucun yerine oyunun kendi login'i gelir, arkasındaki hiçbir şey değişmez.
->
-> **Üretim notu:** `role: "admin"` alanının istemciden kabul edilmesi yalnızca demo içindir. Gerçek dağıtımda bu alan kaldırılmalı ve admin token'ı yalnızca sunucu tarafında üretilmelidir.
-
-`GET /api/auth/players?search=&limit=&offset=` ile oyuncu listesi aranabilir — frontend'in "oyuncu seçici" ekranı bunu kullanır.
-
-### Kimlik doğrulama ve yetkilendirme
-
-Skor gönderimi ve oyuncuya özel okumalar `Authorization: Bearer <token>` ister.
-
-Doğrulama **tamamen bellekte** yapılır: `.env` içindeki `JWT_SECRET` ile HMAC imza kontrolü. Ne Postgres'e ne Redis'e sorgu gider — yazma yolunun gecikmesi kimlik doğrulama yüzünden artmaz. 2M DAU'da her istekte bir kullanıcı sorgusu, bu mimarinin kaçındığı yükü geri getirirdi.
-
-Kimlik token'ın `sub` alanından okunur; istek gövdesinden `userId` **kabul edilmez**.
-
-#### Roller (RBAC)
-
-Token `roles` alanı taşır. İki rol vardır:
-
-| Rol | Yetki |
-| --- | --- |
-| `player` | Skor gönderme, kendi sırasını görme (varsayılan) |
-| `admin` | Yukarıdakiler + ödül dağıtımını tetikleme |
-
-Rol de token'ın içinde taşınır, veritabanında tutulmaz — yetki kontrolü de kimlik doğrulama gibi **sıfır I/O** kalır.
-
-İki guard ayrı tutulmuştur: `JwtAuthGuard` "kimsin?" sorusunu yanıtlar (**401**), `RolesGuard` ise "bunu yapmaya yetkin var mı?" sorusunu (**403**).
-
-`roles` taşımayan bir token sıradan oyuncu sayılır — **varsayılan daima en az yetkidir**, rolsüz bir token hiçbir koşulda admin ucuna giremez.
-
-#### Geliştirme token'ı
-
-Gerçek login akışı henüz yok; korumalı uçları denemek için:
-
-```bash
-node scripts/issue-token.js <userId> [username]            # player rolü
-node scripts/issue-token.js <userId> [username] --admin    # admin rolü
-```
-
-`--admin` verilmedikçe token `player` rolüyle üretilir. Varsayılanın en az yetki olması bilinçlidir: yanlışlıkla admin token üretip onunla test etmek, korumanın çalıştığı yanılgısına yol açardı.
-
-### `POST /api/score` 🔒
-
-Oyuncunun skorunu **artırır**. `delta` bir fark değeridir, mutlak skor değil.
-
-```json
-{
-  "delta": 150,
-  "source": "quest_complete",
-  "idempotencyKey": "order-abc-123"
-}
-```
-
-| Alan | Zorunlu | Açıklama |
-| --- | --- | --- |
-| `delta` | evet | Tamsayı, `-1.000.000` ile `1.000.000` arası. Negatif değer ceza/düzeltme için serbesttir |
-| `source` | evet | Küçük harf, rakam ve alt çizgi, ör. `idle_tick` |
-| `idempotencyKey` | hayır | Verilirse tekrar gönderim çift saymaz |
-
-Ne `userId` ne `seasonId` kabul edilir — biri token'dan, diğeri o anki ISO haftasından gelir. Gönderilirlerse istek 400 alır: aksi halde biri kimlik sahteciliğine, diğeri kapanmış bir sezona skor yazmaya açık olurdu.
-
-Yanıt (`201`):
-
-```json
-{
-  "userId": "cmsxqc9s70000r2v3uit4ajet",
-  "seasonId": "2026-W34",
-  "delta": 150,
-  "totalScore": 10500,
-  "rank": 2,
-  "duplicate": false
-}
-```
-
-`duplicate: true`, isteğin mevcut bir `idempotencyKey` ile kısa devre yapıldığını gösterir; `totalScore` ilk kaydın değeridir.
-
-### `GET /api/leaderboard`
-
-| Parametre | Varsayılan | Açıklama |
-| --- | --- | --- |
-| `limit` | `10` | `1`–`100`. Üst sınır bilinçlidir: sınırsız `ZREVRANGE` tek iş parçacıklı Redis'i kilitlerdi |
-| `offset` | `0` | Atlanacak kayıt sayısı |
-| `seasonId` | o anki hafta | `YYYY-Www`, ör. `2026-W34`. Geçmiş sezon okumaları serbesttir |
-
-```json
-{
-  "seasonId": "2026-W34",
-  "total": 3,
-  "limit": 10,
-  "offset": 0,
-  "entries": [
-    { "rank": 1, "userId": "cmsxqca8w0002r2v3v4ui985h", "score": 12000, "username": "gate_hero" }
-  ]
-}
-```
-
-### `GET /api/leaderboard/around` 🔒
-
-**"3 üst, 2 alt" kuralı.** Oyuncu ilk 100'ün dışında kalsa bile listeden kaybolmaz.
-
-- Oyuncu **ilk 100 içindeyse**: tablonun başı döner, `inTopWindow: true`.
-- Oyuncu **ilk 100 dışındaysa**: `[sıra-3 … sıra+2]` aralığı döner — 3 üst, kendisi, 2 alt.
-
-Kimlik token'dan alınır. Maliyet sabittir: `ZREVRANK` + dar bir `ZREVRANGE` + en fazla 6 satırlık ad araması. Oyuncunun 1.500.000. sırada olması hiçbir şeyi değiştirmez.
-
-```json
-{
-  "seasonId": "2026-W34",
-  "userId": "cmsxrgah80031h3v34yi6r0te",
-  "rank": 110,
-  "score": 89100,
-  "total": 121,
-  "inTopWindow": false,
-  "entries": [
-    { "rank": 107, "username": "player_107", "score": 89400, "isCurrentUser": false },
-    { "rank": 108, "username": "player_108", "score": 89300, "isCurrentUser": false },
-    { "rank": 109, "username": "player_109", "score": 89200, "isCurrentUser": false },
-    { "rank": 110, "username": "player_110", "score": 89100, "isCurrentUser": true },
-    { "rank": 111, "username": "player_111", "score": 89000, "isCurrentUser": false },
-    { "rank": 112, "username": "player_112", "score": 88900, "isCurrentUser": false }
-  ]
-}
-```
-
-### `GET /api/leaderboard/rank` 🔒
-
-Tek oyuncunun sırası ve skoru; kimlik token'dan gelir. Oyuncu o sezon tabloda yoksa `rank` **`null`** döner (`0` değil — `0` birincilik anlamına gelirdi).
-
-```json
-{ "userId": "...", "seasonId": "2026-W34", "rank": null, "score": 0 }
-```
-
-### `GET /api/rewards/pool`
-
-Sezonun o ana kadar biriken ödül havuzu.
-
-```json
-{ "seasonId": "2026-W34", "poolAmount": "210.00" }
-```
-
-### `GET /api/rewards/season`
-
-Sezon durumu — frontend'in geri sayımı ve ödül tablosu için tek uç. Bitiş anı **sunucuda** hesaplanır: istemcinin yerel saatine bırakılsaydı farklı saat dilimlerindeki oyuncular farklı bir sezon sonu görürdü.
-
-```json
-{
-  "seasonId": "2026-W34", "isCurrentSeason": true,
-  "endsAt": "2026-08-24T00:00:00.000Z", "secondsRemaining": 517436,
-  "serverTime": "2026-08-18T00:16:03.885Z",
-  "poolAmount": "94018764.62", "playerCount": 4950,
-  "prizePoolRate": 0.02, "rewardedPlayerCount": 100,
-  "distribution": { "first": 0.2, "second": 0.15, "third": 0.1, "remaining": 0.55 }
-}
-```
-
-Ödül oranları da buradan yayınlanır ki frontend bunları kendi içine sabitlemek zorunda kalmasın.
-
-### Oyuncunun kendi verileri 🔒
-
-Case'in "haftalık ödül/durum iletişimi" gereksinimini karşılayan uçlar. Hepsi token'daki kimliğe bağlıdır; **başka bir oyuncunun cüzdanı veya ödül geçmişi hiçbir uçtan okunamaz** — sıralama herkese açıktır, para bilgisi değildir.
-
-| Uç | Döndürdüğü |
-| --- | --- |
-| `GET /api/me` | Birleşik durum: sıra, skor, bakiye, son ödül |
-| `GET /api/me/wallet` | Cüzdan bakiyesi ve sürüm sayacı |
-| `GET /api/me/rewards` | Ödül geçmişi ve toplam kazanç |
-
-`/api/me` bilinçli olarak birleştirilmiştir: frontend'in açılış ekranı bu verilerin hepsini birden ister, ayrı uçlara bölmek mobil bağlantıda üç ayrı gidiş-dönüş demek olurdu.
-
-> **Para alanları daima string'dir** (`balance`, `amount`, `poolAmount`). JSON `Number`'a çevrilirse kuruş hassasiyeti kaybolur — `Decimal(18,4)` kullanılmasının sebebi de budur.
-
-### `POST /api/rewards/distribute` 🔒 **admin**
-
-Sezon ödüllerini dağıtır. `seasonId` verilmezse bir önceki hafta varsayılır (dağıtım bitmiş sezona uygulanır).
-
-**Yalnızca `admin` rolü.** Para dağıtan bir uç, kimliği doğrulanmış olsa bile herkese açık olamaz: sıradan bir oyuncunun sezonu erken kapatıp ödülleri tetikleyebilmesi gerçek bir ekonomi açığıdır.
-
-| Durum | Yanıt |
-| --- | --- |
-| Token yok / geçersiz | `401 Unauthorized` |
-| Geçerli token, `admin` değil | `403 Forbidden` |
-| `admin` | İşlem yürütülür |
-
-```json
-{
-  "seasonId": "2026-W34",
-  "poolAmount": "10000.00",
-  "rewardedCount": 100,
-  "distributedAmount": "10000.00",
-  "skippedUnknownUsers": 0,
-  "seasonReset": true
-}
-```
-
-Zaten dağıtılmış bir sezon `409 Conflict` döner.
-
-### Örnek istekler
-
-```bash
-TOKEN=$(node scripts/issue-token.js <CUID> oyuncu_adi)
-ADMIN_TOKEN=$(node scripts/issue-token.js <CUID> yonetici --admin)
-
-# Skor gönderimi — userId token'dan gelir, gövdede yer almaz
-curl -X POST http://localhost:8080/api/score \
-  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
-  -d '{"delta":150,"source":"quest_complete"}'
-
-# Idempotency — aynı anahtarla iki kez; skor ve havuz yalnızca bir kez artar
-curl -X POST http://localhost:8080/api/score \
-  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
-  -d '{"delta":500,"source":"purchase","idempotencyKey":"order-abc-123"}'
-
-# Liderlik tablosu ve sayfalama (kimlik istemez)
-curl 'http://localhost:8080/api/leaderboard?limit=10'
-curl 'http://localhost:8080/api/leaderboard?limit=5&offset=5'
+# İlk 100 (kimlik istemez)
+curl "$BASE/leaderboard?limit=10"
 
 # 3 üst / 2 alt penceresi
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/leaderboard/around
+curl -H "Authorization: Bearer $TOKEN" "$BASE/leaderboard/around"
 
-# Ödül havuzu (kimlik istemez)
-curl http://localhost:8080/api/rewards/pool
-
-# Manuel dağıtım — ADMIN token gerekir
-curl -X POST http://localhost:8080/api/rewards/distribute \
-  -H 'Content-Type: application/json' -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -d '{"seasonId":"2026-W34"}'
-
-# Aynı istek player token ile -> 403 Forbidden
-curl -X POST http://localhost:8080/api/rewards/distribute \
-  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
-  -d '{"seasonId":"2026-W34"}'
+# Skor gönderimi — userId token'dan gelir, gövdede yer almaz
+curl -X POST "$BASE/score" -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"delta":150,"source":"quest_complete"}'
 ```
 
 ---
@@ -659,48 +471,13 @@ Bu depo yalnızca backend'i barındırır; kaynak kod ayrı bir alt klasöre gö
 
 ## AI Workflow
 
-Bu proje **tek bir yapay zeka aracıyla** geliştirildi: **Claude Code** (Anthropic). Başka hiçbir yardımcı IDE aracı — Copilot, Cursor, Windsurf veya benzeri bir kod tamamlama eklentisi — kullanılmadı.
+Proje **tek bir yapay zeka aracıyla** geliştirildi: **Claude Code**. Başka hiçbir kod tamamlama eklentisi kullanılmadı.
 
-### Direksiyon geliştiricide
+Temel çalışma kuralı: *üretilen kod, çalıştırılarak doğrulanmadıkça "tamam" sayılmaz.* Araç yön belirlemedi — mimari ve ekonomi kararlarının tamamı geliştirici tarafından verildi, aracın bazı önerileri (ör. `npm audit fix --force`) gerekçeli olarak reddedildi.
 
-Araç hiçbir zaman tek başına yön belirlemedi. Farklı okumaların maddi olarak farklı işe yol açacağı her noktada durup seçenekleri gerekçeleriyle sundu; **hangi yolun tutulacağına geliştirici karar verdi.**
+Sürecin tam dökümü — verilen kararlar, canlı servislere karşı yapılan doğrulamalar, aracın yakaladığı üç somut hata ve açık bırakılan riskler:
 
-Ekonomi ve mimari kuralların tamamı bu şekilde belirlendi:
-
-| Karar | Geliştiricinin seçimi |
-|---|---|
-| Negatif delta havuzu etkilesin mi? | **Hayır** — ceza tüm oyuncuların ödül bütçesini azaltmamalı |
-| Dağıtımda cüzdan bakiyesi artsın mı? | **Evet** — aynı transaction'da, ödül gerçekten ödenmiş olsun |
-| Haftalık dağıtım nasıl tetiklensin? | **Cron + manuel uç**, Redis kilidiyle |
-| `seasonId`'yi kim belirlesin? | **Sunucu** — istemci kapanmış sezona yazamasın |
-| Skor gönderiminde `userId` doğrulansın mı? | **Hayır** — yazma yolu Postgres'e dokunmasın |
-| Liderlik tablosunda username gösterilsin mi? | **Evet** — sayfa başına tek indeksli sorguyla |
-
-İş mantığı katmanına geçilirken doğrudan kod yazılmadı: önce kod tabanı incelendi, varsayımlar canlı servislere karşı ölçüldü ve **yazılı bir plan onaya sunuldu.** Plan onaylanmadan tek satır kod yazılmadı.
-
-### Doğrulama disiplini
-
-Temel kural: **üretilen kod, çalıştırılarak doğrulanmadıkça "tamam" sayılmaz.** Doğrulama sözdizimi kontrolünün ötesine geçti — canlı Upstash, Atlas ve Neon'a karşı ölçüm yapıldı:
-
-- `ZINCRBY`'nin yeni toplamı döndürdüğü ölçülerek doğrulandı (tasarımın kilit taşı)
-- Idempotency'nin dayandığı **E11000** davranışı Atlas'ta gerçekten test edildi
-- 100 oyuncuya gerçek dağıtım yapıldı: `10000.00` havuz → `10000.00` dağıtıldı, kuruşu kuruşuna
-- "Redis ölçekten etkilenmez" iddiası **100.000 üyeye** çıkılarak sınandı: 200 üyeyle aynı süre (49 ms)
-- JWT guard'ın "sıfır I/O" iddiası ölçüldü: doğrulama başına **22 mikrosaniye**
-
-Aracın önerdiği her hamle de kabul edilmedi. `npm audit fix --force` önerisi, Prisma'yı 7.9'dan 6.12'ye düşüreceği için reddedildi; kırmızı yanan bir ödül matematiği testinde ise kod teste uydurulmak yerine **testin beklentisi** gerçek davranışa göre düzeltildi.
-
-### Aracın yüzeye çıkardığı sorunlar
-
-Kod tabanı taranarak üç somut sorun bulundu, teşhisleri geliştiriciye raporlandı ve düzeltmeler onaylanarak uygulandı:
-
-1. **`MONGO_URI`'de eksik veritabanı adı** — Mongoose sessizce `test` veritabanına yazıyordu; hata vermeden, log basmadan.
-2. **Prisma 7 driver adapter zorunluluğu** — uygulama Postgres'e hiç bağlanamıyordu; `prisma.config.ts` yalnızca CLI'yi kapsıyordu.
-3. **Neon transaction timeout'u** — 100 oyunculuk dağıtım 200 ardışık sorgu üretip 5 sn limitini aşıyordu. Yalnızca timeout artırmak semptomu gizlerdi; `createMany` ile toplu yazıma geçildi ve süre **5.2 sn → 1.4 sn**'ye indi.
-
-Üçüncü olayda ek bir doğrulama daha yapıldı: hata sonrası veritabanı durumu kontrol edilerek transaction'ın **temiz geri alındığı** görüldü (0 `RewardLog`, 0 `Wallet`). Atomiklik tasarımı gerçek bir hata senaryosunda sınandı ve kısmi ödeme oluşmadı.
-
-Sürecin ayrıntılı dökümü, açık bırakılan riskler ve aracın önerisinin reddedildiği noktalar için: **[AI_WORKFLOW.md](AI_WORKFLOW.md)**
+**→ [AI_WORKFLOW.md](AI_WORKFLOW.md)**
 
 ---
 
