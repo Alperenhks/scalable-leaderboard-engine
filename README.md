@@ -48,12 +48,28 @@ Backend, Render'ın **ücretsiz** planında çalışır ve bu planın bilinen bi
 
 Bu bir uygulama sorunu değildi — servis uyanıkken ölçülen yanıt süresi 75-80 ms'dir (bkz. [Performans](#performans--ölçülmüş)) — ama projeyi ilk kez açan biri için **ilk izlenim tam olarak o 50 saniyedir.** Teknik olarak açıklanabilir olması, deneyimi düzeltmez.
 
-**Çözüm:** `.github/workflows/keep-alive.yml` her 10 dakikada bir sağlık ucuna istek atar; Render'ın boştalık sayacı hiçbir zaman 15 dakikaya ulaşmaz ve servis sürekli uyanık kalır.
+**Çözüm:** Servise düzenli aralıklarla istek atılır; Render'ın boştalık sayacı hiçbir zaman 15 dakikaya ulaşmaz.
+
+Ping **iki katmanlıdır** ve bu, ölçüm sonucu böyle kurgulandı:
+
+| Katman | Araç | Aralık | Rolü |
+| --- | --- | --- | --- |
+| **Birincil** | [cron-job.org](https://cron-job.org) | 5 dk | Garantili tetikleme |
+| **Yedek** | GitHub Actions (`.github/workflows/keep-alive.yml`) | `*/5` | Birincil durursa devreye girer |
+
+İlk kurulumda yalnızca GitHub Actions kullanıldı ve `*/10` tanımlandı. Ölçüm bunun yetersiz olduğunu gösterdi — **gerçek tetikleme aralıkları 19-32 dakika** arasında değişti:
+
+```
+#2  22:57   #3  23:16  (+19 dk)   #4  23:41  (+25 dk)
+#5  00:00   (+19 dk)   #6  00:32  (+32 dk)
+```
+
+Sebep, GitHub Actions'ın `schedule` tetikleyicisinin **garanti vermemesidir**: yoğunlukta cron'lar ertelenir, hatta atlanır. 15 dakikalık eşik düzenli olarak aşıldığı için servis uyumaya devam ediyordu. Bu yüzden birincil ping, tetiklemeyi garanti eden harici bir zamanlayıcıya taşındı; Actions ise ikinci savunma hattı olarak bırakıldı.
 
 | Karar | Gerekçe |
 | --- | --- |
-| **10 dakika** aralık | GitHub Actions'ın `schedule` tetikleyicisi garantili değildir ve yoğun saatlerde birkaç dakika gecikebilir. 5 dakikalık pay, gecikmeye rağmen 15 dakikalık pencerenin içinde kalmayı sağlar. |
-| **`/` ucu** | Hiçbir veri deposuna dokunmaz. `/api/leaderboard` pinglemek Redis ve Postgres'te günde 144 gereksiz tur demek olurdu. |
+| **5 dk** aralık | 15 dakikalık eşiğe üç katlı pay bırakır; bir tetikleme kaçsa bile sonraki pencereye düşer. |
+| **`/` ucu** | Hiçbir veri deposuna dokunmaz. `/api/leaderboard` pinglemek Redis ve Postgres'te günde 288 gereksiz tur demek olurdu. |
 | **Kota güvenli** | Render ayda 750 saat verir, bir ay en fazla 744 saattir — tek servis kesintisiz uyanık dursa bile limit aşılmaz. |
 
 Ücretli plana geçildiğinde bu workflow gereksizleşir ve silinebilir; **kodda hiçbir değişiklik gerekmez** — uyku, planın bir özelliğidir, uygulamanın değil.

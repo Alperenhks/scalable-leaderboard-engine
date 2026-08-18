@@ -5,10 +5,17 @@
 # bu gecikme tamamen barındırma planından gelir, uygulamadan değil — ama
 # projeyi ilk kez açan biri için ilk izlenim budur.
 #
-# Çözüm: 10 dakikada bir sağlık ucuna istek atılır, boştalık sayacı hiç 15
-# dakikaya ulaşmaz. 10 seçildi çünkü GitHub Actions'ın `schedule` tetikleyicisi
-# garantili değildir ve yoğun saatlerde birkaç dakika gecikebilir; 5 dakikalık
-# pay, gecikmeye rağmen pencerenin içinde kalmayı sağlar.
+# Bu workflow YEDEKTİR, birincil ping değildir.
+#
+# GitHub Actions'ın `schedule` tetikleyicisi garanti vermez: ölçüldü, `*/10`
+# tanımlı olmasına rağmen gerçek aralıklar 19-32 dakika arasında değişti ve
+# Render'ın 15 dakikalık eşiği düzenli olarak aşıldı — servis uyumaya devam
+# etti. Birincil ping bu yüzden harici bir zamanlayıcıdadır (cron-job.org,
+# 5 dakikada bir); ayrıntısı README'dedir.
+#
+# Aralık yine de `*/5`'e çekildi: GitHub geciktirdiğinde bile bazı tetiklemeler
+# pencereye düşer ve harici zamanlayıcı bir sebeple durursa bu workflow ikinci
+# savunma hattı olarak kalır.
 #
 # Kota: Render free tier ayda 750 saat verir, bir ay en fazla 744 saattir —
 # tek servis kesintisiz uyanık dursa bile limit aşılmaz.
@@ -20,7 +27,7 @@ name: keep-alive
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '*/5 * * * *'
   # Elle de tetiklenebilsin: deploy sonrası servisi hemen ısıtmak için.
   workflow_dispatch:
 
