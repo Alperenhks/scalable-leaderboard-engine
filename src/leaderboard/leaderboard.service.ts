@@ -308,7 +308,11 @@ export class LeaderboardService {
     return this.redis.get(key);
   }
 
-  async cacheSet(key: string, value: string, ttlSeconds: number): Promise<void> {
+  async cacheSet(
+    key: string,
+    value: string,
+    ttlSeconds: number,
+  ): Promise<void> {
     await this.redis.set(key, value, 'EX', ttlSeconds);
   }
 
