@@ -5,8 +5,6 @@ Bu doküman frontend'in ihtiyaç duyduğu her şeyi içerir: uçlar, tipler, ak�
 **Base URL (canlı):** `https://scalable-leaderboard-engine.onrender.com/api`
 **Yerel:** `http://localhost:8080/api`
 
-> **UI tasarımı ve ekran akışları için:** [UI_GUIDE.md](UI_GUIDE.md)
-
 ---
 
 ## 1. Kimlik: login yok, "oyuncu seç" var

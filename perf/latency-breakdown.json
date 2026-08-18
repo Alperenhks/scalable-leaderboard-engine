@@ -1,0 +1,15 @@
+{
+  "note": "Tek islem gecikmesi — yerel makineden bulut veri depolarina. ts-node ile olculdu, 20 tekrar ortalamasi.",
+  "measurements": [
+    { "label": "Redis ZREVRANGE 100 (WITHSCORES)", "ms": 62.9, "store": "Upstash" },
+    { "label": "Redis ZREVRANK (tek uye)", "ms": 60.0, "store": "Upstash" },
+    { "label": "Postgres findMany 100 ad", "ms": 68.2, "store": "Neon" },
+    { "label": "Postgres findMany 10 ad", "ms": 60.2, "store": "Neon" },
+    { "label": "Postgres SELECT 1 (saf RTT)", "ms": 57.0, "store": "Neon" }
+  ],
+  "endpoint_rps_local": [
+    { "label": "season (yalnizca Redis)", "rps": 760.8, "p50": 56 },
+    { "label": "leaderboard limit=10", "rps": 156.7, "p50": 319 },
+    { "label": "leaderboard limit=100", "rps": 154.8, "p50": 322 }
+  ]
+}

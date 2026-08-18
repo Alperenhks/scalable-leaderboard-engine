@@ -6,7 +6,7 @@
 >
 > **Canlı API:** https://scalable-leaderboard-engine.onrender.com/api
 >
-> **Frontend geliştiricisi:** Tam API sözleşmesi **[API.md](API.md)**, ekran tasarımı ve akışlar **[UI_GUIDE.md](UI_GUIDE.md)**.
+> **Frontend geliştiricisi:** Tam API sözleşmesi **[API.md](API.md)**.
 
 ---
 
@@ -30,7 +30,7 @@ Bağlantı bilgilerinin hiçbiri koda gömülü değildir; tümü `.env` üzerin
 
 Backend ücretsiz planda çalışır ve **15 dakika istek almazsa uykuya geçer.** Uyandıktan sonraki ilk istek **~50 saniye** sürebilir; sonraki istekler normal hızındadır.
 
-Bu bir hata değil, planın davranışıdır. Frontend'in bunu kullanıcıya bildirmesi gerekir — nasıl yapılacağı **[UI_GUIDE.md](UI_GUIDE.md)** içinde "Soğuk başlangıç" bölümünde anlatılmıştır.
+Bu bir hata değil, planın davranışıdır. Frontend'in bunu kullanıcıya bildirmesi gerekir — frontend'in açılışta bir uyandırma isteği atması ve aşamalı bir yükleniyor mesajı göstermesi yeterlidir.
 
 Ücretli plana geçildiğinde bu davranış tamamen ortadan kalkar; kodda hiçbir değişiklik gerekmez.
 
@@ -553,7 +553,6 @@ Bu depo yalnızca backend'i barındırır; kaynak kod ayrı bir alt klasöre gö
 ├── .env.example
 ├── prisma.config.ts         # DATABASE_URL'i process.env'den okur
 ├── API.md                   # Frontend için tam API sözleşmesi
-├── UI_GUIDE.md              # Liderlik tablosu ekranı tasarım rehberi
 ├── prisma/
 │   ├── schema.prisma        # PostgreSQL şeması
 │   └── seed.ts              # Örnek veri üreticisi (üç depoya birden yazar)
