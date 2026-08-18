@@ -355,6 +355,18 @@ Negatif delta (ceza/düzeltme) havuzu **küçültmez**: bir oyuncuya kesilen cez
 
 Skora oranlı bir dağıtım da denendi ve ölçülerek reddedildi: ilk 100'e girenlerin skorları birbirine çok yakın olduğu için (canlı veride 1,18 kat fark) ödüller de neredeyse eşitleniyordu — 4. sıra 100. sıradan yalnızca %18 fazla alıyordu. Sıra tabanlı ağırlıkta aynı fark **97 kata** çıkar ve sıralamanın 4-100 aralığında gerçek bir karşılığı olur.
 
+Kuralın gerçekten sıraya bağlı olduğu canlı sistemde doğrulanabilir — `pay ÷ ağırlık` oranı sabit çıkar, `pay ÷ skor` çıkmaz:
+
+| Sıra | Skor | Pay | Ağırlık (101−sıra) | Pay ÷ Ağırlık | Pay ÷ Skor |
+|---|---|---|---|---|---|
+| 4 | 4.530.482 | ₺4.237.730 | 97 | **43.687,94** | 0,9354 |
+| 50 | 4.341.886 | ₺2.228.085 | 51 | **43.687,94** | 0,5132 |
+| 100 | 4.213.747 | ₺43.688 | 1 | **43.687,93** | 0,0104 |
+
+```bash
+curl -s "$BASE/rewards/projection" | jq '.entries[] | select(.rank==4 or .rank==100)'
+```
+
 ### Para hassasiyeti
 
 Havuz Redis'te **kuruş cinsinden tamsayı** olarak tutulur (`INCRBY`). `INCRBYFLOAT` ikili kayan nokta hatası biriktirir; haftada milyonlarca artışta havuz gözle görülür şekilde sapardı.
