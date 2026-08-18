@@ -46,10 +46,7 @@ export interface PrizeProjection {
 export class PrizeProjectionService {
   constructor(private readonly leaderboard: LeaderboardService) {}
 
-  async project(
-    seasonId: string,
-    userId?: string,
-  ): Promise<PrizeProjection> {
+  async project(seasonId: string, userId?: string): Promise<PrizeProjection> {
     const [poolMinor, candidates] = await Promise.all([
       this.leaderboard.getPrizePoolMinor(seasonId),
       this.leaderboard.getRewardCandidates(seasonId, REWARDED_PLAYER_COUNT),
@@ -72,7 +69,9 @@ export class PrizeProjectionService {
       poolAmount: minorUnitsToDecimalString(poolMinor),
       rewardedPlayerCount: REWARDED_PLAYER_COUNT,
       entries,
-      me: userId ? await this.projectFor(userId, seasonId, candidates, amountByUserId) : null,
+      me: userId
+        ? await this.projectFor(userId, seasonId, candidates, amountByUserId)
+        : null,
     };
   }
 
@@ -82,7 +81,10 @@ export class PrizeProjectionService {
     candidates: Array<{ userId: string; rank: number; score: number }>,
     amountByUserId: Map<string, bigint>,
   ): Promise<NonNullable<PrizeProjection['me']>> {
-    const { rank, score } = await this.leaderboard.getUserRank(userId, seasonId);
+    const { rank, score } = await this.leaderboard.getUserRank(
+      userId,
+      seasonId,
+    );
     const amountMinor = amountByUserId.get(userId) ?? 0n;
     const isEligible = amountMinor > 0n;
 

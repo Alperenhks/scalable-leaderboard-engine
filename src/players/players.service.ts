@@ -19,7 +19,9 @@ const ACCOUNT_CACHE_TTL_SECONDS = 3_600;
  * "90", bazen "0.0000" döner. Şema `Decimal(18,4)` olduğu için biçim de
  * sabit olmalıdır — istemci `Number`'a çevirmeden doğrudan gösterebilsin.
  */
-function toMoney(value: { toFixed(n: number): string } | null | undefined): string {
+function toMoney(
+  value: { toFixed(n: number): string } | null | undefined,
+): string {
   return value ? value.toFixed(4) : '0.0000';
 }
 
