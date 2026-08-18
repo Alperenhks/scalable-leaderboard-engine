@@ -137,11 +137,11 @@ Bu olayda kritik olan başka bir doğrulama daha yapıldı: hata sonrası verita
 
 ## Performans Darboğazının Kovalanması
 
-Bu bölüm, aracın tek başına varamayacağı bir sonucu geliştiricinin ısrarla kovalamasıyla ortaya çıktı.
+### Talebin kaynağı
 
-### Geliştiricinin talebi
+Uçlar çalışır durumdaydı ve ölçümler kabul edilebilir görünüyordu. Geliştirici bu noktada durmadı: `/api/me` ucunun her istekte Postgres'e iki ayrı sorgu atmasının, 2M DAU hedefindeki bir sistemde kalıcı bir darboğaz olduğunu tespit etti ve optimize edilmesini istedi.
 
-Uçlar çalışır durumdaydı ve ölçümler "yeterli" görünüyordu. Geliştirici buna razı olmadı: **"darboğaza tahammülüm yok"** diyerek, `/api/me` ucunun Postgres'e iki sorgu atmasının kabul edilemez olduğunu belirtti ve optimize edilmesini istedi.
+Bu, aracın kendiliğinden gündeme getirmeyeceği bir taleptir — uç zaten "çalışıyor" durumdaydı.
 
 ### Ölçüm önce, çözüm sonra
 
