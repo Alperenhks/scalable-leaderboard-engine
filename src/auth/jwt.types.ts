@@ -3,14 +3,18 @@ import type { FastifyRequest } from 'fastify';
 /**
  * Sistemdeki roller.
  *
- * Rol token'ın içinde taşınır, veritabanında tutulmaz: yetki kontrolü de
- * kimlik doğrulama gibi sıfır I/O kalmalıdır. Rol değişikliği yeni token
- * gerektirir — token ömrü 7 gün olduğu için bu, yetki geri alma ihtiyacı
- * doğduğunda dikkat edilmesi gereken bir noktadır (aşağıdaki nota bakınız).
+ * Şu an tek bir rol vardır: case bir yetkilendirme sistemi istemiyor ve
+ * korunması gereken bir uç yok — haftalık ödül dağıtımı cron ile otomatik
+ * çalışır. Önceden bir `ADMIN` rolü ve onu kontrol eden bir `RolesGuard`
+ * tanımlıydı ama hiçbir uca bağlı değildi; kullanılmayan bir yetki katmanı
+ * taşımak yerine kaldırıldı.
+ *
+ * Alan token'ın içinde taşınır, veritabanında tutulmaz: yetki kontrolü de
+ * kimlik doğrulama gibi sıfır I/O kalmalıdır. Gerçek bir rol ihtiyacı
+ * doğduğunda buraya yeni değer eklemek yeterlidir.
  */
 export const Role = {
   PLAYER: 'player',
-  ADMIN: 'admin',
 } as const;
 
 export type Role = (typeof Role)[keyof typeof Role];

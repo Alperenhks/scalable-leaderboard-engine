@@ -70,7 +70,6 @@ Gövde **tamamen opsiyoneldir** — boş `{}` gönderirsen rastgele bir oyuncu d
 {}                                    // rastgele oyuncu
 { "username": "demo_neon_pilot_5" }   // belirli oyuncu
 { "mode": "outside" }                 // senaryoya göre oyuncu
-{ "adminSecret": "<sır>" }            // admin yetkili token (ADMIN_SECRET ile)
 ```
 
 **`mode` değerleri — jürinin tek tıkla her senaryoyu denemesi için:**
@@ -367,7 +366,7 @@ Doğrulandı: `entries` toplamı havuza **kuruşu kuruşuna eşittir**.
 
 `pointsToEligible` idle oyunda en güçlü motivasyon sinyalidir: *"68.836 puan daha kazan, ödül almaya başla."*
 
-### `POST /api/rewards/distribute` 🔒 **admin**
+### `POST /api/rewards/distribute`
 
 Dağıtımı elle tetikler. `seasonId` verilmezse bir önceki hafta.
 
@@ -376,21 +375,19 @@ Dağıtımı elle tetikler. `seasonId` verilmezse bir önceki hafta.
   "distributedAmount": "94018764.62", "skippedUnknownUsers": 0, "seasonReset": true }
 ```
 
-Admin token için: `POST /api/auth/identify { "adminSecret": "<sır>" }`
+**Asıl dağıtım yolu bu değildir.** Haftalık dağıtım cron ile **otomatik**
+çalışır (Pazartesi 00:05 UTC). Bu uç yalnızca, sezonun bitmesini beklemeden
+dağıtımın çalıştığını görebilmek için vardır ve bu yüzden kimlik doğrulaması
+istemez.
 
-Sır sunucudaki `ADMIN_SECRET` ortam değişkeninden okunur ve sabit zamanlı
-karşılaştırmayla doğrulanır. **Değişken tanımlı değilse admin token hiç
-üretilmez** ve bu uç kimseye açık olmaz — yapılandırılmamış bir ortamda ucun
-kapalı kalması, yanlışlıkla açık kalmasına yeğdir.
-
-Haftalık dağıtım zaten cron ile **otomatik** çalışır (Pazartesi 00:05 UTC);
-bu uç yalnızca dağıtımın elle gösterilebilmesi için vardır.
+Ucun yıkıcılığı idempotency ile sınırlanır: aynı sezon ikinci kez dağıtılamaz
+(`409`) ve eşzamanlı çağrılar Redis kilidine takılır — art arda çağırmak çift
+ödeme üretemez.
 
 | Durum | Yanıt |
 | --- | --- |
-| Token yok | `401` |
-| `player` token | `403` |
 | Sezon zaten dağıtılmış | `409` |
+| Dağıtım hâlihazırda sürüyor (başka instance) | `409` |
 
 > ⚠️ **Dağıtım yıkıcıdır:** `seasonReset: true` döndüğünde o sezonun Redis sıralaması ve havuzu **silinir**. Demoda tetiklersen tabloyu yeniden doldurmak için `npm run seed -- --reset` gerekir. Frontend'de bu butona onay diyaloğu koy.
 

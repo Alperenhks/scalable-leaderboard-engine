@@ -19,11 +19,6 @@ export const envValidationSchema = Joi.object({
     .required(),
   JWT_SECRET: Joi.string().min(16).required(),
   PORT: Joi.number().port().default(8080),
-  // Ödül dağıtımı ucunu elle tetikleyebilmek için gereken paylaşılan sır.
-  // OPSİYONELDİR ve tanımlı değilse admin token hiç üretilmez — haftalık
-  // dağıtım zaten cron ile otomatik çalışır, bu uç yalnızca dağıtımın elle
-  // gösterilebilmesi içindir.
-  ADMIN_SECRET: Joi.string().min(16).optional(),
   // Instance başına Postgres bağlantı havuzu boyutu. Yatayda çoğaltmada
   // toplam bağlantı sayısı = instance × bu değer; Neon'un limitine göre
   // ayarlanır.

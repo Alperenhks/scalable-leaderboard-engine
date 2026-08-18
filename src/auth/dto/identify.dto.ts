@@ -1,4 +1,5 @@
-import { IsIn, IsOptional, IsString, Length, Matches } from 'class-validator';
+import { IsIn, IsOptional, IsString, Length } from 'class-validator';
+import { IsSeasonId } from '../../common/decorators/is-season-id.decorator';
 
 /**
  * POST /api/auth/identify gövdesi.
@@ -31,31 +32,7 @@ export class IdentifyDto {
   @IsIn(['top', 'mid', 'outside', 'unranked', 'random'])
   mode?: 'top' | 'mid' | 'outside' | 'unranked' | 'random';
 
-  /**
-   * Admin yetkili token istemek için paylaşılan sır.
-   *
-   * Daha önce burada serbest bir `role: "admin"` alanı vardı ve isteyen
-   * herkes ödül dağıtımını tetikleyebilecek bir token alabiliyordu — canlı
-   * dağıtımda para dağıtan uç fiilen açıktı.
-   *
-   * Sır `ADMIN_SECRET` ortam değişkeninden okunur ve sabit zamanlı
-   * karşılaştırmayla doğrulanır. Değişken tanımlı değilse admin token'ı
-   * HİÇ üretilmez: yapılandırılmamış bir ortamda ucun kapalı kalması,
-   * yanlışlıkla açık kalmasına yeğdir.
-   *
-   * Bu bir login akışı değildir; case zaten kimlik doğrulama istemiyor.
-   * Haftalık dağıtım cron ile otomatik çalışır (`rewards.scheduler.ts`) —
-   * bu uç yalnızca dağıtımın elle gösterilebilmesi için vardır.
-   */
-  @IsOptional()
-  @IsString()
-  adminSecret?: string;
-
   /** Sezon bağlamı — `mode` ile oyuncu seçilirken hangi tabloya bakılacağı. */
-  @IsOptional()
-  @IsString()
-  @Matches(/^\d{4}-W(0[1-9]|[1-4]\d|5[0-3])$/, {
-    message: 'seasonId biçimi YYYY-Www olmalıdır, ör. 2026-W34',
-  })
+  @IsSeasonId()
   seasonId?: string;
 }

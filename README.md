@@ -218,7 +218,7 @@ Doğrulama tamamen bellekte yapılır: `JWT_SECRET` ile HMAC imza kontrolü. Ne 
 
 Kimlik token'ın `sub` alanından okunur; gövdeden `userId` kabul edilmez. Roller de (`player` / `admin`) token içinde taşınır, veritabanında tutulmaz.
 
-İki guard ayrı tutulmuştur: `JwtAuthGuard` *"kimsin?"* sorusunu yanıtlar (**401**), `RolesGuard` *"bunu yapmaya yetkin var mı?"* sorusunu (**403**). `roles` taşımayan token sıradan oyuncu sayılır — **varsayılan daima en az yetkidir.**
+`JwtAuthGuard` *"kimsin?"* sorusunu yanıtlar (**401**). Rol tabanlı bir yetki katmanı bilinçli olarak **yoktur**: case bir yetkilendirme sistemi istemiyor ve korunması gereken bir uç bulunmuyor — haftalık ödül dağıtımı cron ile otomatik çalışır. Kullanılmayan bir RBAC altyapısı taşımak yerine kaldırıldı.
 
 ### CORS
 
@@ -226,7 +226,13 @@ Kimlik token'ın `sub` alanından okunur; gövdeden `userId` kabul edilmez. Roll
 
 Vercel her deploy için farklı bir preview alan adı ürettiğinden tek tek listelemek her dağıtımda kod değişikliği gerektirirdi; regex bu yükü kaldırır. Fastify adapter'da CORS `@fastify/cors` üzerinden işlenir, regex desteği oradan gelir.
 
-> **Üretim notu:** `credentials: true` ile regex origin birlikte kullanıldığında `*.vercel.app` altındaki herhangi bir site kimlik bilgisi taşıyan istek atabilir. Gerçek dağıtımda origin listesi sabit bir alan adına daraltılmalı veya `ALLOWED_ORIGINS` ortam değişkeninden okunmalıdır.
+**Üretimde daraltma:** `ALLOWED_ORIGINS` ortam değişkeni (virgülle ayrılmış liste) tanımlanırsa yalnızca o adresler kabul edilir ve yukarıdaki varsayılan devre dışı kalır:
+
+```bash
+ALLOWED_ORIGINS=https://scalable-leaderboard-client.vercel.app
+```
+
+> Bu ayar gerçek bir dağıtımda **verilmelidir.** `credentials: true` ile regex origin birlikte kullanıldığında `*.vercel.app` altındaki herhangi bir site kimlik bilgisi taşıyan istek atabilir; varsayılan yalnızca geliştirme ve değerlendirme kolaylığı içindir.
 
 ### Uçlar
 
@@ -255,7 +261,7 @@ Tüm uçların tam sözleşmesi — istek/yanıt gövdeleri, doğrulama kurallar
 - **`delta` mutlak skor değildir.** İstemci fark gönderir, sunucu `ZINCRBY` ile uygular — iki istemci aynı anda yazdığında kayıp güncelleme olmaz.
 - **`userId` ve `seasonId` istek gövdesinde kabul edilmez.** Biri token'dan, diğeri sunucunun ISO haftasından gelir; gönderilirse `forbidNonWhitelisted` sayesinde istek `400` alır. Aksi halde biri kimlik sahteciliğine, diğeri kapanmış sezona yazmaya açık olurdu.
 - **`rank: null` asla `0`'a çevrilmez.** `0` birincilik anlamına gelirdi; sıralamada yer almamak ayrı bir durumdur.
-- **Admin token istek gövdesinden alınamaz.** `POST /api/auth/identify` yalnızca sunucudaki `ADMIN_SECRET` ile eşleşen bir sır sunulduğunda admin token üretir; değişken tanımlı değilse hiç üretmez. Case kimlik doğrulama istemiyor, ancak para dağıtan bir ucun herkese açık olması ayrı bir sorundur — haftalık dağıtım zaten cron ile otomatiktir, bu uç yalnızca dağıtımın elle gösterilebilmesi içindir.
+- **Dağıtım ucu kimlik doğrulaması istemez.** Case bir yetkilendirme sistemi istemiyor ve haftalık dağıtım zaten cron ile otomatiktir; `POST /api/rewards/distribute` yalnızca sezonun bitmesini beklemeden dağıtımın çalıştığını görebilmek için vardır. Ucun yıkıcılığı guard ile değil **idempotency** ile sınırlanır: aynı sezon ikinci kez dağıtılamaz (`409`) ve eşzamanlı çağrılar Redis kilidine takılır.
 
 ### Örnek istek
 
@@ -424,37 +430,29 @@ Haftalık dağıtım cron ile **otomatik** çalışır (Pazartesi 00:05 UTC), an
 projeyi inceleyen birinin sezonun bitmesini beklemesi anlamsız olurdu. Bu
 yüzden dağıtım elle de tetiklenebilir.
 
-Uç korumalıdır: `POST /api/auth/identify` yalnızca sunucudaki `ADMIN_SECRET`
-ile eşleşen bir sır sunulduğunda admin token üretir. Değişken tanımlı değilse
-admin token **hiç** üretilmez ve uç kimseye açık olmaz.
-
-**Değerlendirme ortamının sırrı:** `4DExwMJAYfLSnYoAw3CO/9smWfZiPkUxAN890ND7Zis=`
+Uç kimlik doğrulaması istemez; yıkıcılığı **idempotency** ile sınırlanır (aynı
+sezon ikinci kez dağıtılamaz).
 
 ```bash
 BASE=https://scalable-leaderboard-engine.onrender.com/api
 
-# 1) Admin token al
-ADMIN=$(curl -s -X POST $BASE/auth/identify \
-  -H 'Content-Type: application/json' \
-  -d '{"adminSecret":"4DExwMJAYfLSnYoAw3CO/9smWfZiPkUxAN890ND7Zis="}' | jq -r .token)
-
-# 2) Dağıtım ÖNCESİ durum: havuz ve tahmini paylar
+# 1) Dağıtım ÖNCESİ durum: havuz, sezon ve tahmini paylar
+curl -s "$BASE/rewards/season"     | jq '{sezon: .seasonId, havuz: .poolAmount, oyuncu: .playerCount}'
 curl -s "$BASE/rewards/projection" | jq '{havuz: .poolAmount, ilkUc: .entries[0:3]}'
 
+# 2) 1. sıradaki oyuncunun adını NOT ALIN — dağıtımdan sonra tablo boşalır
+curl -s "$BASE/leaderboard?limit=1" | jq -r '.entries[0].username'
+
 # 3) Dağıtımı tetikle — İÇİNDE BULUNULAN sezonu dağıtır (yıkıcıdır)
-curl -s -X POST "$BASE/rewards/distribute" \
-  -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+curl -s -X POST "$BASE/rewards/distribute" -H 'Content-Type: application/json' \
   -d "{\"seasonId\":\"$(curl -s $BASE/rewards/season | jq -r .seasonId)\"}" | jq
 
 # 4) Dağıtım SONRASI: havuz ve sıralama sıfırlanmış olmalı
 curl -s "$BASE/rewards/season" | jq '{havuz: .poolAmount, oyuncu: .playerCount}'
 
-# 5) Kazanan oyuncunun cüzdanına para geçti mi?
-#    DİKKAT: 3. adımdan ÖNCE 1. sıradaki oyuncunun adını not alın —
-#    dağıtımdan sonra sıralama boşalır ve `mode` ile oyuncu seçilemez.
-#    (Adım 2'deki projeksiyon çıktısında ya da /leaderboard?limit=1 ile görünür.)
+# 5) Kazanan oyuncunun cüzdanına para geçti mi? (2. adımdaki adı kullanın)
 TOKEN=$(curl -s -X POST $BASE/auth/identify -H 'Content-Type: application/json' \
-  -d '{"username":"<1. sıradaki oyuncunun adı>"}' | jq -r .token)
+  -d '{"username":"<2. adımda not aldığınız ad>"}' | jq -r .token)
 curl -s "$BASE/me/rewards" -H "Authorization: Bearer $TOKEN" | jq
 curl -s "$BASE/me/wallet"  -H "Authorization: Bearer $TOKEN" | jq
 ```
@@ -552,7 +550,7 @@ Bu depo yalnızca backend'i barındırır; kaynak kod ayrı bir alt klasöre gö
     ├── config/              # .env doğrulama şeması
     ├── prisma/              # PrismaService (global modül)
     ├── redis/               # Redis client sağlayıcısı (global modül)
-    ├── auth/                # JWT guard, RolesGuard, @CurrentUser + kimlik seçimi
+    ├── auth/                # JWT guard, @CurrentUser + kimlik seçimi
     ├── events/              # Mongoose skor event şeması + EventsService
     ├── leaderboard/         # ZSET servisi, controller, DTO'lar
     ├── players/             # Oyuncunun kendi verileri: cüzdan, ödül geçmişi

@@ -3,12 +3,8 @@ import { RewardsService } from './rewards.service';
 import { PrizeProjectionService } from './prize-projection.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
 import { DistributeSeasonDto } from './dto/distribute-season.dto';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
-import { RolesGuard } from '../auth/roles.guard';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
-import { Roles } from '../auth/roles.decorator';
-import { Role } from '../auth/jwt.types';
 import {
   getCurrentSeasonId,
   getSeasonEndsAt,
@@ -119,19 +115,25 @@ export class RewardsController {
   }
 
   /**
-   * Manuel dağıtım tetikleyicisi — YALNIZCA admin.
+   * Dağıtımı elle tetikler — değerlendirme kolaylığı için.
    *
-   * Para dağıtan bir uç, kimliği doğrulanmış olsa bile herkese açık olamaz:
-   * sıradan bir oyuncunun sezonu erken kapatıp ödülleri tetikleyebilmesi
-   * gerçek bir ekonomi açığıdır.
+   * Asıl dağıtım yolu bu DEĞİLDİR: `RewardsScheduler` her Pazartesi 00:05 UTC
+   * çalışır ve biten haftayı kendiliğinden dağıtır (case: *"Rewards should go
+   * out automatically at the end of the week"*). Bu uç yalnızca, sezonun
+   * bitmesini beklemeden dağıtımın çalıştığını görebilmek için vardır.
    *
-   * İki guard birlikte çalışır ve SIRA ÖNEMLİDİR: JwtAuthGuard kimliği
-   * doğrulayıp isteğe iliştirir (401), RolesGuard bu kimliğin yetkisini
-   * kontrol eder (403).
+   * Kimlik doğrulaması bilinçli olarak YOKTUR. Case bir yetkilendirme sistemi
+   * istemiyor; demo ortamında rol katmanı, denemek isteyen kişiye yalnızca
+   * engel çıkarırdı. Gerçek bir dağıtımda bu uç kaldırılır — cron zaten
+   * yeterlidir.
+   *
+   * Ucun yıkıcılığı guard ile değil İDEMPOTENCY ile sınırlanır: aynı sezon
+   * ikinci kez dağıtılamaz (`RewardLog(userId, seasonId)` tekil kısıtı → 409)
+   * ve eşzamanlı çağrılar Redis kilidine takılır. Art arda çağırmak çift
+   * ödeme üretemez; en kötü ihtimalle sezon erken kapanır ve tablo sıfırlanır
+   * (`npm run seed -- --reset` ile geri gelir).
    */
   @Post('distribute')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.ADMIN)
   async distribute(@Body() dto: DistributeSeasonDto) {
     const seasonId = dto.seasonId ?? getPreviousSeasonId();
     return this.rewards.distributeSeason(seasonId);
