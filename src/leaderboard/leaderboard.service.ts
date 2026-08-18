@@ -299,30 +299,6 @@ export class LeaderboardService {
   }
 
   /**
-   * Genel amaçlı cache okuma/yazma/silme.
-   *
-   * Redis client'ı yalnızca bu servis enjekte ettiği için, cache'e ihtiyaç
-   * duyan diğer servisler ikinci bir bağlantı açmak yerine buradan geçer.
-   */
-  async cacheGet(key: string): Promise<string | null> {
-    return this.redis.get(key);
-  }
-
-  async cacheSet(
-    key: string,
-    value: string,
-    ttlSeconds: number,
-  ): Promise<void> {
-    await this.redis.set(key, value, 'EX', ttlSeconds);
-  }
-
-  /** Verilen anahtarları siler; boş liste güvenlidir. */
-  async cacheDelete(keys: string[]): Promise<void> {
-    if (keys.length === 0) return;
-    await this.redis.del(...keys);
-  }
-
-  /**
    * Tek oyuncunun profili (ad + ülke) — önce cache, gerekirse Postgres.
    *
    * `resolveProfiles`'ın tek kullanıcılık yüzeyi. Ayrı bir Postgres sorgusu

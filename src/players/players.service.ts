@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { CacheService } from '../redis/cache.service';
+import {
+  decimalStringToMinorUnits,
+  minorUnitsToDecimalString,
+} from '../rewards/reward-math';
 
 /**
  * Cüzdan özeti cache ömrü.
@@ -49,6 +54,7 @@ export class PlayersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly leaderboard: LeaderboardService,
+    private readonly cache: CacheService,
   ) {}
 
   /** Oyuncunun cüzdan/ödül özeti için cache anahtarı. */
@@ -91,7 +97,7 @@ export class PlayersService {
   private async getAccount(userId: string): Promise<CachedAccount> {
     const key = PlayersService.accountKey(userId);
 
-    const cached = await this.leaderboard.cacheGet(key);
+    const cached = await this.cache.get(key);
     if (cached) {
       try {
         return JSON.parse(cached) as CachedAccount;
@@ -134,7 +140,7 @@ export class PlayersService {
         : null,
     };
 
-    await this.leaderboard.cacheSet(
+    await this.cache.set(
       key,
       JSON.stringify(account),
       ACCOUNT_CACHE_TTL_SECONDS,
@@ -173,15 +179,19 @@ export class PlayersService {
       take: 52,
     });
 
+    // Toplam kuruş cinsinden BigInt ile hesaplanır. `Number(r.amount)` ile
+    // float'a düşürüp toplamak, projenin geri kalanındaki para disiplinini
+    // (bkz. `reward-math.ts`) tam da para toplarken kırardı — dağıtımın
+    // kendisi BigInt kullanırken özetin float kullanması tutarsız olurdu.
     const totalEarnedMinor = rewards.reduce(
-      (sum, r) => sum + BigInt(Math.round(Number(r.amount) * 100)),
+      (sum, r) => sum + decimalStringToMinorUnits(r.amount.toFixed(4)),
       0n,
     );
 
     return {
       userId,
       count: rewards.length,
-      totalEarned: (Number(totalEarnedMinor) / 100).toFixed(2),
+      totalEarned: minorUnitsToDecimalString(totalEarnedMinor),
       rewards: rewards.map((r) => ({
         ...r,
         // BigInt JSON'a doğrudan serileşmez; para ise sabit biçimde döner.

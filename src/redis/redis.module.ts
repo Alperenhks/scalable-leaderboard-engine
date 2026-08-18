@@ -1,8 +1,10 @@
 import { Global, Module, OnApplicationShutdown, Inject } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
+import { CacheService } from './cache.service';
+import { REDIS_CLIENT } from './redis.constants';
 
-export const REDIS_CLIENT = 'REDIS_CLIENT';
+export { REDIS_CLIENT } from './redis.constants';
 
 /**
  * Canlı liderlik tablosunun taşıyıcısı.
@@ -31,8 +33,9 @@ export const REDIS_CLIENT = 'REDIS_CLIENT';
         });
       },
     },
+    CacheService,
   ],
-  exports: [REDIS_CLIENT],
+  exports: [REDIS_CLIENT, CacheService],
 })
 export class RedisModule implements OnApplicationShutdown {
   constructor(@Inject(REDIS_CLIENT) private readonly client: Redis) {}

@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { CacheService } from '../redis/cache.service';
 import { PlayersService } from '../players/players.service';
 import {
   allocatePrizePool,
@@ -31,6 +32,7 @@ export class RewardsService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
     private readonly prisma: PrismaService,
     private readonly leaderboard: LeaderboardService,
+    private readonly cache: CacheService,
   ) {}
 
   private lockKey(seasonId: string): string {
@@ -127,7 +129,7 @@ export class RewardsService {
     // burada değişir, dolayısıyla geçersiz kılmanın tek doğru yeri burasıdır.
     // Postgres'e yazıldıktan SONRA silinir — önce silinseydi, yazma
     // tamamlanana kadar gelen bir istek eski değeri yeniden cache'lerdi.
-    await this.leaderboard.cacheDelete(
+    await this.cache.delete(
       payable.map((a) => PlayersService.accountKey(a.userId)),
     );
 
