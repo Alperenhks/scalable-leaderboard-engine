@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
+import { PlayersService } from '../players/players.service';
 import {
   allocatePrizePool,
   minorUnitsToDecimalString,
@@ -121,6 +122,14 @@ export class RewardsService {
     }
 
     const distributedMinor = await this.persist(seasonId, payable);
+
+    // Cüzdan özeti cache'i geçersiz kılınır: bakiye ve son ödül YALNIZCA
+    // burada değişir, dolayısıyla geçersiz kılmanın tek doğru yeri burasıdır.
+    // Postgres'e yazıldıktan SONRA silinir — önce silinseydi, yazma
+    // tamamlanana kadar gelen bir istek eski değeri yeniden cache'lerdi.
+    await this.leaderboard.cacheDelete(
+      payable.map((a) => PlayersService.accountKey(a.userId)),
+    );
 
     // Redis ancak Postgres'e yazıldıktan SONRA sıfırlanır. Ters sırada
     // dağıtım yarıda kalırsa sıralama ve havuz geri getirilemezdi.

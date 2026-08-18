@@ -135,6 +135,62 @@ Bu olayda kritik olan başka bir doğrulama daha yapıldı: hata sonrası verita
 
 ---
 
+## Performans Darboğazının Kovalanması
+
+Bu bölüm, aracın tek başına varamayacağı bir sonucu geliştiricinin ısrarla kovalamasıyla ortaya çıktı.
+
+### Geliştiricinin talebi
+
+Uçlar çalışır durumdaydı ve ölçümler "yeterli" görünüyordu. Geliştirici buna razı olmadı: **"darboğaza tahammülüm yok"** diyerek, `/api/me` ucunun Postgres'e iki sorgu atmasının kabul edilemez olduğunu belirtti ve optimize edilmesini istedi.
+
+### Ölçüm önce, çözüm sonra
+
+Tahminle hareket edilmedi. Her veri deposuna tek tek gecikme ölçüldü:
+
+| İşlem | Süre |
+|---|---|
+| Postgres `SELECT 1` (boş sorgu) | **57 ms** |
+| Postgres `findMany` 100 satır | 68 ms |
+| Redis `ZREVRANGE` 100 üye | 63 ms |
+
+`SELECT 1`'in de 57 ms sürmesi belirleyici oldu: maliyet **satır sayısından değil, gidiş-dönüşün kendisinden** geliyordu. Ardından eşzamanlılık taraması yapıldı:
+
+| Eşzamanlılık | `/me` (Postgres'e gider) | `/rewards/season` (yalnız Redis) |
+|---|---|---|
+| 10 | 80 RPS · p50 76 ms | 104 RPS · p50 75 ms |
+| 25 | 95 RPS · p50 206 ms | 215 RPS · p50 **78 ms** |
+| 50 | 108 RPS · p50 489 ms | 277 RPS · p50 150 ms |
+
+Redis'e giden uç eşzamanlılıkla **ölçekleniyor** (p50 sabit), Postgres'e giden **ölçeklenmiyordu**.
+
+### Reddedilen ilk çözüm
+
+İlk akla gelen "iki sorguyu tek JOIN'e indir" fikri uygulandı ve **ölçülerek reddedildi**: 147 RPS → 93 RPS. Prisma'nın ilişkili sorgusu tek tur atıyor ama daha pahalı bir plan üretiyordu. Değişiklik geri alındı.
+
+Buradaki disiplin şuydu: *makul görünen bir optimizasyon, ölçüm onaylamadıkça uygulanmaz.*
+
+### Bulunan optimal çözüm
+
+Doğru soru "kaç sorgu?" değil, **"Postgres'e gitmek zorunda mıyız?"** idi. Cevap hayırdı:
+
+- Kullanıcı adı ve ülke zaten liderlik tablosunun doldurduğu profil cache'inde duruyordu.
+- Bakiye ve son ödül **yalnızca haftalık dağıtımda** değişiyordu — yani cache'lenmeye en uygun veri türü.
+
+Cüzdan özeti Redis'e alındı ve geçersiz kılma tek noktaya bağlandı: `RewardsService` dağıtımı Postgres'e yazdıktan **sonra** ilgili anahtarları siler. Sıra önemliydi — önce silinseydi, yazma tamamlanana kadar gelen bir istek eski değeri yeniden cache'lerdi.
+
+| Uç | Önce | Sonra |
+|---|---|---|
+| `GET /api/me` | 43 RPS | **659 RPS** |
+| `GET /api/me/wallet` | 123 RPS | **757 RPS** |
+
+Doğruluk uçtan uca sınandı: gerçek bir dağıtım çalıştırıldı, bakiyenin `0.0000 → 180.0000` olarak güncellendiği ve `/me` ile `/me/wallet`'ın aynı değeri döndürdüğü doğrulandı.
+
+### Yan ürün: para biçiminde bulunan tutarsızlık
+
+Bu doğrulama sırasında ilgisiz bir hata ortaya çıktı: Prisma'nın `Decimal.toString()`'i sondaki sıfırları atıyor, aynı alan bazen `"90"` bazen `"0.0000"` dönüyordu. Şema `Decimal(18,4)` olduğu için biçim sabit olmalıydı; tüm para alanları `toFixed(4)`'e çevrildi.
+
+Hata aranmıyordu — **doğrulama disiplini onu kendiliğinden yüzeye çıkardı.**
+
 ## Aracın Önerisinin Reddedildiği Noktalar
 
 Yapay zekanın önerdiği her hamle doğru değildir. Bu projede bilinçli olarak **uygulanmayan** öneriler:
