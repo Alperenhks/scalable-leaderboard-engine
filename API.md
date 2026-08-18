@@ -160,6 +160,54 @@ Oyuncunun sırası yoksa (`rank: null`) `neighbours` **boş dizidir**.
 - `rank: null` ise oyuncu bu hafta hiç oynamamış: pencere yerine tablonun başı döner. "Skor gönder, sıralamaya gir" mesajı için doğru an.
 - Oyuncu tablonun son 2 sırasındaysa 6 yerine 5 veya 4 kayıt gelebilir (aşağıda kimse yok) — liste uzunluğunu sabit varsayma.
 
+### Ülke sıralaması — `?country=TR`
+
+`leaderboard` ve `around` uçlarının ikisi de `country` parametresi alır. Verilirse sıralama o ülkeyle **sınırlanır**: sıra numaraları o ülke içinde 1'den başlar.
+
+```bash
+GET /api/leaderboard?country=TR&limit=100      # TR'nin ilk 100'ü
+GET /api/leaderboard/around?country=TR         # TR içindeki kendi çevren
+```
+
+```jsonc
+{
+  "seasonId": "2026-W34",
+  "country": "TR",          // global sorguda null
+  "total": 256,             // TR'deki toplam oyuncu
+  "entries": [
+    { "rank": 1, "username": "demo_neon_pilot_5", "score": 4526619, "country": "TR" }
+  ]
+}
+```
+
+**Neden bu özellik değerli:** global tabloda 2476. sırada olan bir oyuncu ilk 100'de görünmez — ama kendi ülkesinde **129/249** olabilir. Ülke sekmesi, çoğu oyuncunun kendini bir yerde görmesini sağlar.
+
+```jsonc
+// GET /api/leaderboard/around?country=RU  (globalde 2476. olan oyuncu)
+{
+  "country": "RU", "rank": 129, "total": 249,
+  "neighbours": [
+    { "rank": 126, "username": "demo_royal_tycoon_2462",  "isCurrentUser": false },
+    { "rank": 127, "username": "demo_iron_tiger_2400",    "isCurrentUser": false },
+    { "rank": 128, "username": "demo_frost_phoenix_2579", "isCurrentUser": false },
+    { "rank": 129, "username": "demo_lucky_comet_2387",   "isCurrentUser": true  },
+    { "rank": 130, "username": "demo_swift_comet_2549",   "isCurrentUser": false },
+    { "rank": 131, "username": "demo_neon_ranger_2594",   "isCurrentUser": false }
+  ]
+}
+```
+
+| Kural | |
+| --- | --- |
+| Biçim | ISO 3166-1 alpha-2, iki harf (`TR`, `us` — büyük/küçük fark etmez) |
+| Geçersiz değer | `400` — `"country ISO 3166-1 alpha-2 olmalıdır"` |
+| Bilinmeyen ülke | `200`, boş liste (`total: 0`) |
+| Yanıttaki `country` | Sorgulanan ülke; global sorguda `null` |
+
+**Performans:** ülke sorgusu global sorgu kadar hızlıdır — her ülke için ayrı bir Redis ZSET tutulur, global tablo taranıp filtrelenmez. Ölçüldü: global 271 RPS / ülke 292 RPS (ülke kümesi daha küçük olduğu için bir tık hızlı).
+
+> Kullanıcının kendi ülkesi `GET /api/me` yanıtındaki `country` alanından alınır.
+
 ### `GET /api/leaderboard/rank?seasonId=` 🔒
 
 Tabloyu çekmeden yalnızca kendi sırası. Polling için ucuz.

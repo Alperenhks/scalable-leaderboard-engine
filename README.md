@@ -61,6 +61,14 @@ Sistemin temel tasarım kararı, **her veri deposunun tek bir sorumluluğu olmas
 
 Bir oyuncunun sırasını PostgreSQL'de `ORDER BY score DESC` + `OFFSET` ile bulmak, 2 milyon satırlık bir tabloda pratikte tablo taraması demektir. Redis Sorted Set aynı sorguyu `ZREVRANK` ile O(log N) sürede yanıtlar. Bu, ölçeklenebilirliğin tercihe bağlı bir detayı değil, temel şartıdır.
 
+### Ülke sıralaması: filtre değil, ayrı indeks
+
+Ülke bazlı tablo için global sıralama çekilip filtrelenmez — 2M üyede bu, tüm sıralamayı taramak demektir. Bunun yerine her ülke kendi ZSET'inde indekslenir (`lb:<sezon>:c:TR`), böylece ülke sorgusu global sorguyla **aynı** O(log N + M) maliyetinde çalışır.
+
+Postgres şeması değişmez; ülke yalnızca Redis'te indekslenen bir görünümdür. Yazma yolu da yavaşlamaz: ülke `ZINCRBY`'si mevcut pipeline'a eklenir (ek ağ turu yok) ve ülke bilgisi Postgres'ten değil profil cache'inden okunur.
+
+Kazanım somut: globalde 2476. sıradaki bir oyuncu ilk 100'de görünmez ama kendi ülkesinde 129/249'dur — çoğu oyuncu kendini ancak böyle bir yerde bulabilir.
+
 ### Neden stateless?
 
 Hiçbir sıralama durumu Node process belleğinde tutulmaz — tüm durum Redis'tedir. Bu sayede API sunucusu yatayda serbestçe çoğaltılabilir; herhangi bir istek herhangi bir instance'a gidebilir, sticky session gerekmez.
@@ -211,8 +219,8 @@ Tüm uçların tam sözleşmesi — istek/yanıt gövdeleri, doğrulama kurallar
 | --- | --- | --- |
 | `POST /api/auth/identify` | ➖ | Oyuncu kimliği seçer, JWT üretir |
 | `GET /api/auth/players` | ➖ | Oyuncu listesi / arama |
-| `GET /api/leaderboard` | ➖ | İlk N (limit ≤ 100) |
-| `GET /api/leaderboard/around` | 🔒 | ⭐ 3 üst + kendisi + 2 alt penceresi |
+| `GET /api/leaderboard` | ➖ | İlk N (limit ≤ 100), `?country=TR` ile ülke sıralaması |
+| `GET /api/leaderboard/around` | 🔒 | ⭐ 3 üst + kendisi + 2 alt penceresi (`?country` destekler) |
 | `GET /api/leaderboard/rank` | 🔒 | Yalnızca kendi sırası |
 | `POST /api/score` | 🔒 | Skoru **artırır** (delta), havuza %2 katkı |
 | `GET /api/rewards/season` | ➖ | Geri sayım, havuz, dağıtım oranları |
