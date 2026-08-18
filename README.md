@@ -418,6 +418,66 @@ Kilit tek başına yeterli değildir: TTL dolması veya Redis'in yeniden başlam
 
 `RewardLog` kaydı ve `Wallet.balance` artışı **tek transaction**'da yazılır; ayrı yazılsalardı araya düşen bir hata, ödül kaydı olan ama parası ödenmemiş oyuncular bırakırdı. Redis ancak Postgres'e yazıldıktan **sonra** sıfırlanır — ters sırada dağıtım yarıda kalırsa sıralama ve havuz geri getirilemezdi.
 
+### Dağıtımı canlı görmek — değerlendirme için
+
+Haftalık dağıtım cron ile **otomatik** çalışır (Pazartesi 00:05 UTC), ancak
+projeyi inceleyen birinin sezonun bitmesini beklemesi anlamsız olurdu. Bu
+yüzden dağıtım elle de tetiklenebilir.
+
+Uç korumalıdır: `POST /api/auth/identify` yalnızca sunucudaki `ADMIN_SECRET`
+ile eşleşen bir sır sunulduğunda admin token üretir. Değişken tanımlı değilse
+admin token **hiç** üretilmez ve uç kimseye açık olmaz.
+
+**Değerlendirme ortamının sırrı:** `4DExwMJAYfLSnYoAw3CO/9smWfZiPkUxAN890ND7Zis=`
+
+```bash
+BASE=https://scalable-leaderboard-engine.onrender.com/api
+
+# 1) Admin token al
+ADMIN=$(curl -s -X POST $BASE/auth/identify \
+  -H 'Content-Type: application/json' \
+  -d '{"adminSecret":"4DExwMJAYfLSnYoAw3CO/9smWfZiPkUxAN890ND7Zis="}' | jq -r .token)
+
+# 2) Dağıtım ÖNCESİ durum: havuz ve tahmini paylar
+curl -s "$BASE/rewards/projection" | jq '{havuz: .poolAmount, ilkUc: .entries[0:3]}'
+
+# 3) Dağıtımı tetikle — İÇİNDE BULUNULAN sezonu dağıtır (yıkıcıdır)
+curl -s -X POST "$BASE/rewards/distribute" \
+  -H "Authorization: Bearer $ADMIN" -H 'Content-Type: application/json' \
+  -d "{\"seasonId\":\"$(curl -s $BASE/rewards/season | jq -r .seasonId)\"}" | jq
+
+# 4) Dağıtım SONRASI: havuz ve sıralama sıfırlanmış olmalı
+curl -s "$BASE/rewards/season" | jq '{havuz: .poolAmount, oyuncu: .playerCount}'
+
+# 5) Kazanan oyuncunun cüzdanına para geçti mi?
+#    DİKKAT: 3. adımdan ÖNCE 1. sıradaki oyuncunun adını not alın —
+#    dağıtımdan sonra sıralama boşalır ve `mode` ile oyuncu seçilemez.
+#    (Adım 2'deki projeksiyon çıktısında ya da /leaderboard?limit=1 ile görünür.)
+TOKEN=$(curl -s -X POST $BASE/auth/identify -H 'Content-Type: application/json' \
+  -d '{"username":"<1. sıradaki oyuncunun adı>"}' | jq -r .token)
+curl -s "$BASE/me/rewards" -H "Authorization: Bearer $TOKEN" | jq
+curl -s "$BASE/me/wallet"  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+Beklenen: `rewards` dizisinde `rank: 1`, `status: "DISTRIBUTED"` bir kayıt ve
+cüzdan bakiyesinde havuzun %20'si.
+
+> **Uyarı — bu işlem yıkıcıdır ve geri alınamaz.** Sezon dağıtıldıktan sonra
+> sıralama ve havuz sıfırlanır; **arayüzdeki tablo boşalır** ve `mode` ile
+> oyuncu seçen uçlar `404` döner (sıralamada kimse kalmadığı için).
+>
+> Bu case'in 6. maddesinin (*"both the pool and the leaderboard reset to start
+> the new week"*) beklenen davranışıdır. Veriyi geri getirmek için depoyu
+> klonlayıp `npm run seed -- --reset` çalıştırın — 5.000 oyuncu ~30 saniyede
+> yeniden üretilir ve tablo dolar. Aynı sezon ikinci kez
+> dağıtılmak istenirse `409` döner — bu bir hata değil, idempotency güvencesinin
+> çalıştığının kanıtıdır.
+
+Dağıtımı tetiklemeden önce sonucunu görmek isterseniz `GET /api/rewards/projection`
+aynı hesap fonksiyonunu (`allocatePrizePool`) kullanarak "sezon şu an bitse kim ne
+kazanır" sorusunu yanıtlar — tahmin ile gerçek dağıtım arasında sapma olmaması
+için ikisi de tek kaynaktan hesaplanır.
+
 ### Tutarlılık modeli
 
 Skor gönderimi iki veri deposuna yayılır ve aralarında ortak transaction yoktur — dağıtık atomiklik mümkün değildir. Bu yüzden sıra bilinçli seçilmiştir: **önce Redis, sonra Mongo.**
