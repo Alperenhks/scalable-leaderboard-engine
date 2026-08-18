@@ -2,7 +2,12 @@
 
 2 milyon günlük aktif kullanıcılı bir mobil idle oyun (ör. *Airport Master*) için tasarlanmış, tamamen **stateless** ve yatayda ölçeklenebilir Liderlik Tablosu API'si.
 
+**▶ Canlı uygulama (arayüz):** https://scalable-leaderboard-client.vercel.app
 **Canlı API:** https://scalable-leaderboard-engine.onrender.com/api
+**İstemci deposu:** https://github.com/Alperenhks/scalable-leaderboard-client
+
+> İstemci ve sunucu **ayrı depolarda** ve ayrı dağıtılır (Vercel / Render);
+> bu depo yalnızca sunucuyu barındırır.
 
 | Belge | İçerik |
 |---|---|

@@ -103,12 +103,32 @@ describe('allocatePrizePool', () => {
     expect(result.every((r) => r.amountMinor > 0n)).toBe(true);
   });
 
-  it('kuyrukta skor toplamı 0 ise kalan pay 1. oyuncuya eklenir', () => {
+  it('kuyrukta skor toplamı 0 ise %55 kuyruğa EŞİT bölünür', () => {
+    // Regresyon: bu durumda %55 hiç dağıtılmıyor ve artık hesabı tamamını
+    // 1. oyuncuya ekliyordu — o oyuncu case'in öngördüğü %20 yerine %75
+    // alıyordu. Kuyruktaki 7 oyuncu ise hiç ödül almıyordu.
     const pool = toMinorUnits(1_000);
     const list = candidates(10, () => 0);
     const result = allocatePrizePool(pool, list);
 
+    // Para korunur.
     expect(total(result)).toBe(pool);
+
+    // 1. oyuncu case'in payını alır (+ yalnızca birkaç kuruşluk bölme artığı).
+    const first = result.find((r) => r.rank === 1)!;
+    const twentyPercent = (pool * 20n) / 100n;
+    expect(first.amountMinor).toBeGreaterThanOrEqual(twentyPercent);
+    expect(first.amountMinor).toBeLessThan(twentyPercent + 100n);
+
+    // Kuyruktaki HERKES pay alır ve paylar eşittir.
+    const tail = result.filter((r) => r.rank >= 4);
+    expect(tail).toHaveLength(7);
+    expect(new Set(tail.map((t) => t.amountMinor)).size).toBe(1);
+
+    // Kuyruğun toplamı %55'e eşittir (bölme artığı 1.'ye gitmiş olabilir).
+    const tailTotal = tail.reduce((sum, t) => sum + t.amountMinor, 0n);
+    const fiftyFive = (pool * 55n) / 100n;
+    expect(fiftyFive - tailTotal).toBeLessThan(100n);
   });
 
   it('adaylar sırasız gelse de sıraya göre paylaştırır', () => {

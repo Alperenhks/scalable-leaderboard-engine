@@ -153,8 +153,12 @@ export class RewardsService {
    * Ödül kaydı ve cüzdan bakiyesi TEK transaction'da yazılır.
    *
    * Ayrı yazılsalardı araya düşen bir hata, ödül kaydı olan ama parası
-   * ödenmemiş (veya tersi) oyuncular bırakırdı. Wallet.version optimistic
-   * lock sayacı da burada ilerletilir.
+   * ödenmemiş (veya tersi) oyuncular bırakırdı.
+   *
+   * Bakiye `increment` ile güncellenir: Postgres bunu satır kilidi altında
+   * atomik uygular, yani eşzamanlı iki ödül yazımı birbirini ezmez. Okuyup
+   * hesaplayıp geri yazsaydık lost update riski doğardı. `Wallet.version`
+   * yalnızca yazım sayacıdır, kilit mekanizması değildir.
    *
    * Sorgu sayısı bilinçli olarak düşük tutulur. Oyuncu başına ayrı create +
    * upsert yazmak 100 oyuncuda 200 ardışık gidiş-dönüş demektir; Neon gibi

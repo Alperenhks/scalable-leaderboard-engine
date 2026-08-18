@@ -9,12 +9,12 @@
 // Bağlantı URL'i koda gömülmez; prisma.config.ts üzerinden process.env.DATABASE_URL okunur.
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider            = "prisma-client"
+  output              = "../generated/prisma"
   // NestJS CommonJS'e derleniyor. Varsayılan ESM çıktısı import.meta.url
   // kullanır; Node o dosyayı ESM sayar ama gövde CommonJS derlendiği için
   // "exports is not defined in ES module scope" ile çalışmaz.
-  moduleFormat = "cjs"
+  moduleFormat        = "cjs"
   // Üretilen dosyalar .ts; varsayılan ".js" uzantılı import'ları Jest'in
   // çözümleyicisi eşleyemiyor (tsc eşliyor). Boş bırakmak her ikisini de
   // çalıştırır.
@@ -49,7 +49,13 @@ model Wallet {
   id      String  @id @default(cuid())
   userId  String  @unique
   balance Decimal @default(0) @db.Decimal(18, 4)
-  /// Optimistic locking sayacı: eşzamanlı ödül yazımlarında lost update'i önler.
+  /// Yazım sayacı: cüzdanın kaç kez güncellendiğini tutar (denetim izi).
+  ///
+  /// Lost update koruması bu alandan DEĞİL, bakiyenin `increment` ile
+  /// güncellenmesinden gelir: Postgres `UPDATE ... SET balance = balance + x`
+  /// ifadesini satır kilidi altında atomik uygular, dolayısıyla eşzamanlı iki
+  /// yazım birbirini ezmez. Alan ileride optimistic lock'a (`where: { version }`)
+  /// geçilmek istenirse hazır durur.
   version Int     @default(0)
 
   createdAt DateTime @default(now())
@@ -65,21 +71,21 @@ model Wallet {
 /// seviyesinde engellemek üzere (userId, seasonId) tekil kısıtı vardır —
 /// idempotent dağıtım, dağıtım job'ının yeniden çalışmasına karşı korur.
 model RewardLog {
-  id       String @id @default(cuid())
-  userId   String
+  id            String       @id @default(cuid())
+  userId        String
   /// Sezon tanımlayıcısı, ör. "2026-W33" (ISO hafta).
-  seasonId String
+  seasonId      String
   /// Oyuncunun sezon sonundaki sıralaması.
-  rank     Int
+  rank          Int
   /// Ödül anındaki skoru (denetim için dondurulmuş kopya).
-  score    BigInt
-  amount   Decimal      @db.Decimal(18, 4)
-  status   RewardStatus @default(PENDING)
+  score         BigInt
+  amount        Decimal      @db.Decimal(18, 4)
+  status        RewardStatus @default(PENDING)
   /// Dağıtım başarısız olduysa nedeni.
   failureReason String?
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
   distributedAt DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

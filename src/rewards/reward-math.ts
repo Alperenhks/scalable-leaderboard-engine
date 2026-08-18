@@ -100,15 +100,32 @@ export function allocatePrizePool(
     0n,
   );
 
-  if (tail.length > 0 && totalTailScore > 0n) {
-    for (const allocation of tail) {
-      const weight = BigInt(Math.max(0, allocation.score));
-      allocation.amountMinor = (remainderPool * weight) / totalTailScore;
+  if (tail.length > 0) {
+    if (totalTailScore > 0n) {
+      for (const allocation of tail) {
+        const weight = BigInt(Math.max(0, allocation.score));
+        allocation.amountMinor = (remainderPool * weight) / totalTailScore;
+      }
+    } else {
+      // Kuyruktaki herkesin skoru 0 (ya da negatif): orantı tanımsızdır.
+      // Bu durumda %55 EŞİT bölünür — dağıtılmadan bırakılırsa aşağıdaki
+      // artık hesabı tamamını 1. oyuncuya eklerdi ve o oyuncu case'in
+      // öngördüğü %20 yerine %75 alırdı.
+      const perPlayer = remainderPool / BigInt(tail.length);
+      for (const allocation of tail) {
+        allocation.amountMinor = perPlayer;
+      }
     }
   }
 
   // Yuvarlama artığı: dağıtılan toplam ile havuz arasındaki fark daima
   // 1. oyuncuya eklenir, böylece toplam korunur.
+  //
+  // Buraya YALNIZCA bölme artıkları düşer (birkaç kuruş). %55'in tamamının
+  // buraya düşebildiği durum yukarıda kapatıldı: kuyruk hiç yoksa (ör. sezonu
+  // 3 oyuncuyla kapatmak) artık yine büyür, ama o senaryoda dağıtılacak
+  // 4-100 sırası fiilen mevcut değildir ve havuzun sahipsiz kalmaması
+  // gerekir.
   const distributed = allocations.reduce((sum, a) => sum + a.amountMinor, 0n);
   const leftover = poolMinor - distributed;
   if (leftover !== 0n && allocations.length > 0) {
