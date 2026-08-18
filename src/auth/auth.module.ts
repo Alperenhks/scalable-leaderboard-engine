@@ -1,8 +1,8 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { JwtAuthGuard } from './jwt-auth.guard';
-import { OptionalJwtAuthGuard } from './optional-jwt-auth.guard';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from './guards/optional-jwt-auth.guard';
 
 /**
  * Kimlik doğrulama altyapısı.

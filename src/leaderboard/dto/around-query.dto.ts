@@ -7,7 +7,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { TOP_WINDOW_SIZE } from '../leaderboard.service';
+import { TOP_WINDOW_SIZE } from '../services/leaderboard.service';
 import { IsSeasonId } from '../../common/decorators/is-season-id.decorator';
 
 /**

@@ -5,7 +5,7 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
-import { AppModule } from './../src/app.module';
+import { AppModule } from '../src/app.module';
 
 /**
  * Uygulama Fastify üzerinde çalışır; test de aynı adaptörü kurmalıdır.

@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { LeaderboardController } from './leaderboard.controller';
-import { LeaderboardService } from './leaderboard.service';
-import { EventsService } from '../events/events.service';
+import { LeaderboardController } from './controllers/leaderboard.controller';
+import { LeaderboardService } from './services/leaderboard.service';
+import { EventsService } from '../events/services/events.service';
 import {
   ScoreEvent,
   ScoreEventSchema,

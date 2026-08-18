@@ -1,6 +1,6 @@
 import { applyDecorators } from '@nestjs/common';
 import { IsOptional, IsString, Matches } from 'class-validator';
-import { SEASON_ID_REGEX } from '../season.util';
+import { SEASON_ID_REGEX } from '../utils/season.util';
 
 /**
  * Opsiyonel sezon kimliği doğrulaması.

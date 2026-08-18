@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { RewardsController } from './rewards.controller';
-import { RewardsService } from './rewards.service';
-import { PrizeProjectionService } from './prize-projection.service';
-import { RewardsScheduler } from './rewards.scheduler';
+import { RewardsController } from './controllers/rewards.controller';
+import { RewardsService } from './services/rewards.service';
+import { PrizeProjectionService } from './services/prize-projection.service';
+import { RewardsScheduler } from './schedulers/rewards.scheduler';
 import { LeaderboardModule } from '../leaderboard/leaderboard.module';
 
 /**

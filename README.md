@@ -546,18 +546,66 @@ Bu depo yalnızca backend'i barındırır; kaynak kod ayrı bir alt klasöre gö
 ├── scripts/
 │   └── issue-token.js       # CLI'dan JWT üretici (HTTP alternatifi: /api/auth/identify)
 └── src/
-    ├── common/              # Sezon (ISO hafta) yardımcıları
-    ├── config/              # .env doğrulama şeması
-    ├── prisma/              # PrismaService (global modül)
-    ├── redis/               # Redis client sağlayıcısı (global modül)
-    ├── auth/                # JWT guard, @CurrentUser + kimlik seçimi
-    ├── events/              # Mongoose skor event şeması + EventsService
-    ├── leaderboard/         # ZSET servisi, controller, DTO'lar
-    ├── players/             # Oyuncunun kendi verileri: cüzdan, ödül geçmişi
-    ├── rewards/             # Ödül matematiği, dağıtım servisi, cron, sezon durumu
+    ├── main.ts              # Fastify bootstrap + CORS
     ├── app.module.ts        # Üç veri deposunun bağlandığı kök modül
-    └── main.ts              # Fastify bootstrap + CORS
+    │
+    ├── infrastructure/      # Veri deposu bağlantıları — iş kuralı içermez
+    │   ├── prisma/          #   PrismaService (global modül)
+    │   ├── redis/           #   Redis client + CacheService (global modül)
+    │   └── config/          #   .env doğrulama şeması (Joi)
+    │
+    ├── leaderboard/         # Canlı sıralama — sistemin kalbi
+    │   ├── controllers/     #   HTTP uçları
+    │   ├── services/        #   ZSET işlemleri, profil cache'i
+    │   ├── dto/             #   İstek doğrulaması
+    │   └── tests/           #   getAround sınır durumları
+    │
+    ├── rewards/             # Ödül havuzu ve haftalık dağıtım
+    │   ├── controllers/
+    │   ├── services/        #   Dağıtım + projeksiyon
+    │   ├── schedulers/      #   Haftalık cron
+    │   ├── domain/          #   reward-math: saf iş kuralı, I/O yok
+    │   ├── dto/
+    │   └── tests/
+    │
+    ├── auth/                # Kimlik seçimi ve JWT doğrulaması
+    │   ├── controllers/
+    │   ├── services/
+    │   ├── guards/          #   JwtAuthGuard, OptionalJwtAuthGuard
+    │   ├── decorators/      #   @CurrentUser
+    │   ├── types/
+    │   ├── dto/
+    │   └── tests/
+    │
+    ├── players/             # Oyuncunun kendi verileri: cüzdan, ödül geçmişi
+    │   ├── controllers/
+    │   └── services/
+    │
+    ├── health/              # Liveness + readiness probe'ları
+    │   ├── controllers/
+    │   ├── services/
+    │   └── tests/
+    │
+    ├── events/              # Append-only skor event log'u (Mongo)
+    │   ├── services/
+    │   └── schemas/
+    │
+    └── common/              # Modüller arası paylaşılan kod
+        ├── utils/           #   Sezon (ISO hafta) hesabı
+        ├── decorators/      #   @IsSeasonId
+        ├── dto/
+        └── tests/
 ```
+
+Her özellik modülü kendi içinde aynı deseni izler: `controllers/` HTTP yüzeyi,
+`services/` iş mantığı, `dto/` girdi doğrulaması, `tests/` birim testleri.
+Bir modüle ilk kez bakan biri nereye bakacağını klasör adından bilir ve
+modülün tamamı tek bir klasörün altında kapalıdır.
+
+`infrastructure/` bilinçli olarak ayrıdır: Prisma, Redis ve ortam değişkeni
+doğrulaması bir *özellik* değil, tüm özelliklerin üzerinde durduğu zemindir.
+Aynı şekilde `rewards/domain/` içindeki para matematiği hiçbir veri deposuna
+bağlı değildir — bu yüzden ayrı durur ve doğrudan test edilebilir.
 
 ---
 
