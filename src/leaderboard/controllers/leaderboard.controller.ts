@@ -69,14 +69,7 @@ export class LeaderboardController {
     );
   }
 
-  /**
-   * Oyuncunun kendi sırası — tabloyu çekmeden tek kayıt sorgusu.
-   *
-   * seasonId ham @Query yerine DTO ile alınır: ValidationPipe yalnızca DTO
-   * sınıfları üzerinde çalışır, ham string parametrede devreye girmez. Ham
-   * bırakıldığında geçersiz bir sezon (ör. "BADFORMAT") 400 yerine 200
-   * dönüyor ve doğrulanmamış girdi Redis anahtar adına giriyordu.
-   */
+  /** Oyuncunun kendi sırası — tabloyu çekmeden tek kayıt sorgusu. */
   @Get('leaderboard/rank')
   @UseGuards(JwtAuthGuard)
   async getUserRank(

@@ -5,13 +5,7 @@ import { PlayerSearchQueryDto } from '../dto/player-search-query.dto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { getCurrentSeasonId } from '../../common/utils/season.util';
 
-/**
- * Oyuncu kimliği seçimi — login DEĞİL.
- *
- * Case bir kimlik doğrulama sistemi istemiyor ama oyuncunun kendi sırasını
- * görmesini istiyor. Bu uçlar aradaki boşluğu doldurur: şifre sormadan,
- * "hangi oyuncu olarak bakıyorum?" sorusunu yanıtlar ve imzalı bir token verir.
- */
+/** Oyuncu kimliği seçimi — login değil (gerekçesi `AuthService`'te). */
 @Controller('auth')
 export class AuthController {
   constructor(

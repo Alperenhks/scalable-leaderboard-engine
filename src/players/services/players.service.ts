@@ -57,7 +57,6 @@ export class PlayersService {
     private readonly cache: CacheService,
   ) {}
 
-  /** Oyuncunun cüzdan/ödül özeti için cache anahtarı. */
   static accountKey(userId: string): string {
     return `account:${userId}`;
   }
@@ -161,7 +160,6 @@ export class PlayersService {
     return { userId, balance: account.balance };
   }
 
-  /** Ödül geçmişi — en yeni sezon başta. */
   async getRewardHistory(userId: string) {
     const rewards = await this.prisma.rewardLog.findMany({
       where: { userId },

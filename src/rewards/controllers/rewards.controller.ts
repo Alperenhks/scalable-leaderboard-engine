@@ -28,12 +28,7 @@ export class RewardsController {
     private readonly projection: PrizeProjectionService,
   ) {}
 
-  /**
-   * Sezonun o ana kadar biriken ödül havuzu.
-   *
-   * seasonId ham @Query yerine DTO ile alınır — ValidationPipe ham string
-   * parametrelerde çalışmaz ve bu uç geçersiz sezonu 200 ile kabul ediyordu.
-   */
+  /** Sezonun o ana kadar biriken ödül havuzu. */
   @Get('pool')
   async getPool(@Query() query: SeasonQueryDto) {
     const season = query.seasonId ?? getCurrentSeasonId();
@@ -95,10 +90,6 @@ export class RewardsController {
   /**
    * "Sezon şu an bitse kim ne kazanır?" — ilk 100'ün tahmini payları.
    *
-   * Hesap sunucuda yapılır çünkü 4-100 aralığındaki pay skora ORANTILIDIR:
-   * bir oyuncunun payını bilmek ilk 100'ün tüm skorlarının toplamını
-   * gerektirir. İlk 100 dışındaki oyuncunun istemcisinde bu veri yoktur.
-   *
    * Kimlik OPSİYONELDİR: token'sız istek yalnızca tabloyu alır, token'lı
    * istek ek olarak `me` alanında kendi payını da alır.
    */
@@ -117,21 +108,14 @@ export class RewardsController {
   /**
    * Dağıtımı elle tetikler — değerlendirme kolaylığı için.
    *
-   * Asıl dağıtım yolu bu DEĞİLDİR: `RewardsScheduler` her Pazartesi 00:05 UTC
-   * çalışır ve biten haftayı kendiliğinden dağıtır (case: *"Rewards should go
-   * out automatically at the end of the week"*). Bu uç yalnızca, sezonun
-   * bitmesini beklemeden dağıtımın çalıştığını görebilmek için vardır.
+   * Asıl yol bu değildir: `RewardsScheduler` her Pazartesi 00:05 UTC çalışıp
+   * biten haftayı kendiliğinden dağıtır. Bu uç yalnızca sezonun bitmesini
+   * beklemeden dağıtımın çalıştığını görebilmek için var, bu yüzden kimlik
+   * doğrulaması istemez.
    *
-   * Kimlik doğrulaması bilinçli olarak YOKTUR. Case bir yetkilendirme sistemi
-   * istemiyor; demo ortamında rol katmanı, denemek isteyen kişiye yalnızca
-   * engel çıkarırdı. Gerçek bir dağıtımda bu uç kaldırılır — cron zaten
-   * yeterlidir.
-   *
-   * Ucun yıkıcılığı guard ile değil İDEMPOTENCY ile sınırlanır: aynı sezon
-   * ikinci kez dağıtılamaz (`RewardLog(userId, seasonId)` tekil kısıtı → 409)
-   * ve eşzamanlı çağrılar Redis kilidine takılır. Art arda çağırmak çift
-   * ödeme üretemez; en kötü ihtimalle sezon erken kapanır ve tablo sıfırlanır
-   * (`npm run seed -- --reset` ile geri gelir).
+   * Yıkıcılığı guard ile değil idempotency ile sınırlıdır: aynı sezon ikinci
+   * kez dağıtılamaz (`RewardLog(userId, seasonId)` tekil kısıtı → 409) ve
+   * eşzamanlı çağrılar Redis kilidine takılır.
    */
   @Post('distribute')
   async distribute(@Body() dto: DistributeSeasonDto) {

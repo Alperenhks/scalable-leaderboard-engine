@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ScoreEvent, ScoreEventDocument } from '../schemas/score-event.schema';
 
-/** Mongo'nun tekil anahtar ihlali hata kodu. */
 export const MONGO_DUPLICATE_KEY = 11000;
 
 export interface RecordEventInput {

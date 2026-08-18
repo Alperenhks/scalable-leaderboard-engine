@@ -23,10 +23,8 @@ import { PrismaClient } from '../generated/prisma/client';
 import { getCurrentSeasonId } from '../src/common/utils/season.util';
 import { PRIZE_POOL_RATE } from '../src/rewards/domain/reward-math';
 
-/** Örnek oyuncuların kullanıcı adı öneki — temizlik bu önekle yapılır. */
 const SEED_PREFIX = 'demo_';
 
-/** Mongo'ya yazılacak event örneklem oranı (yüzde). */
 const EVENT_SAMPLE_PERCENT = 2;
 
 const args = process.argv.slice(2);

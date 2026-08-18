@@ -33,14 +33,9 @@ export interface PrizeProjection {
 /**
  * Sezon bitse ŞU AN kim ne kazanırdı?
  *
- * Hesap sunucuda yapılır çünkü 4-100 aralığındaki pay skora ORANTILIDIR:
- * bir oyuncunun payını bilmek için ilk 100'ün TÜM skorlarının toplamı
- * gerekir. İlk 100 dışındaki bir oyuncunun istemcisinde bu veri yoktur ve
- * yalnızca kendi payını öğrenmek için 100 satır çekmesi gerekirdi.
- *
- * Daha önemlisi: tahmin, gerçek dağıtımla AYNI fonksiyonu (allocatePrizePool)
- * kullanır. Ayrı bir formül yazılsaydı ikisi zamanla ayrışır ve oyuncuya
- * gösterilen tutar ödenenden farklı olurdu — para tarafında kabul edilemez.
+ * Tahmin, gerçek dağıtımla AYNI fonksiyonu (`allocatePrizePool`) kullanır.
+ * Ayrı bir formül yazılsaydı ikisi zamanla ayrışır ve oyuncuya gösterilen
+ * tutar ödenenden farklı olurdu — para tarafında kabul edilemez.
  */
 @Injectable()
 export class PrizeProjectionService {

@@ -9,10 +9,8 @@ import {
 } from '../events/schemas/score-event.schema';
 
 /**
- * PrismaModule ve RedisModule @Global() olduğundan burada import edilmez.
- *
- * ScoreEvent şeması forFeature ile burada kaydedilir — bu olmadan
- * @InjectModel çözümlenemez.
+ * ScoreEvent şeması `forFeature` ile burada kaydedilir; bu olmadan
+ * `@InjectModel` çözümlenemez.
  */
 @Module({
   imports: [

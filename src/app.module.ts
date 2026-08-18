@@ -34,7 +34,6 @@ import { envValidationSchema } from './infrastructure/config/env.validation';
         dbName: 'leaderboard',
       }),
     }),
-    // Haftalık ödül dağıtımı cron'u için.
     ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,

@@ -35,13 +35,11 @@ export class PlayersController {
     );
   }
 
-  /** Oyuncunun cüzdan bakiyesi. */
   @Get('wallet')
   async getWallet(@CurrentUser('sub') userId: string) {
     return this.players.getWallet(userId);
   }
 
-  /** Oyuncunun geçmiş sezonlardaki ödül kazanımları. */
   @Get('rewards')
   async getRewards(@CurrentUser('sub') userId: string) {
     return this.players.getRewardHistory(userId);

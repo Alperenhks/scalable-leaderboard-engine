@@ -21,7 +21,6 @@ export interface DistributionResult {
   seasonReset: boolean;
 }
 
-/** Dağıtımın tek instance'ta çalışmasını sağlayan kilit. */
 const LOCK_TTL_SECONDS = 300;
 
 @Injectable()
@@ -197,7 +196,6 @@ export class RewardsService {
           })),
         });
 
-        // Cüzdanı olmayanlar tek seferde oluşturulur.
         const missing = allocations.filter((a) => !hasWallet.has(a.userId));
         if (missing.length > 0) {
           await tx.wallet.createMany({

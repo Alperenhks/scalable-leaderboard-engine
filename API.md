@@ -498,7 +498,7 @@ Kimlik sütunu: ➖ herkese açık · 🔒 token gerekli · ➖/🔒 opsiyonel (
 | --- | --- | --- |
 | `GET /api/rewards/season` | ➖ | **Geri sayım + havuz + oranlar.** Üst bandın tek kaynağı: sezon ne zaman bitiyor, havuzda ne kadar var, dağıtım yüzdeleri ne |
 | `GET /api/rewards/pool` | ➖ | **Sadece havuz tutarı.** `season`'ın hafif alternatifi; yalnızca rakam lazımsa |
-| `GET /api/rewards/projection` | ➖/🔒 | **"Şu an bitse ne kazanırım?"** İlk 100'ün tahmini payları; token'lı istekte `me.amount` ile kendi payın ve `me.pointsToEligible` ile ödüle kaç puan kaldığın. Hesap sunucuda yapılır çünkü 4-100 arası pay skora orantılı |
+| `GET /api/rewards/projection` | ➖/🔒 | **"Şu an bitse ne kazanırım?"** İlk 100'ün tahmini payları; token'lı istekte `me.amount` ile kendi payın ve `me.pointsToEligible` ile ödüle kaç puan kaldığın. Tahmin, gerçek dağıtımla aynı fonksiyonu kullanır — gösterilen tutar ödenenden ayrışamaz |
 | `POST /api/rewards/distribute` | 🔒 admin | **Dağıtımı tetikler.** ⚠️ Yıkıcı: sezonun sıralamasını ve havuzunu siler. Demo'da onay diyaloğu koy |
 
 ### Oyuncunun kendi verileri

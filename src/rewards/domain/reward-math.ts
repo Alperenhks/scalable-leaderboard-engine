@@ -6,10 +6,8 @@
  * doğrudan sınanabilir.
  */
 
-/** Skor akışının havuza aktarılan oranı. */
 export const PRIZE_POOL_RATE = 0.02;
 
-/** Ödül alan oyuncu sayısı üst sınırı. */
 export const REWARDED_PLAYER_COUNT = 100;
 
 /** İlk üç sıranın sabit payları; kalan %55 4-100 arasına dağıtılır. */

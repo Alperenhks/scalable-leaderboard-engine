@@ -20,12 +20,6 @@ import {
  */
 export class SubmitScoreDto {
   /**
-   * userId burada YOKTUR: kimlik doğrulanmış JWT'nin `sub` alanından alınır.
-   * Gövdeden alınsaydı herkes başkası adına skor gönderebilirdi. Gönderilirse
-   * forbidNonWhitelisted otomatik 400 verir.
-   */
-
-  /**
    * Bu event'te eklenen fark — mutlak skor değil. Negatif değer ceza/düzeltme
    * senaryosu için serbesttir.
    *

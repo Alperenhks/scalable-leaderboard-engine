@@ -5,7 +5,6 @@ import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.module';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 
-/** Tek bir bağımlılığın o anki durumu. */
 export interface DependencyHealth {
   status: 'up' | 'down';
   /** Yoklamanın sürdüğü süre (ms) — yavaşlayan bir bağımlılık böyle görünür. */

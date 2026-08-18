@@ -54,10 +54,8 @@ export interface AroundLeaderboard {
   neighbours: Array<LeaderboardEntry & { isCurrentUser: boolean }>;
 }
 
-/** Postgres'te bulunamayan kullanıcı için gösterilecek ad. */
 const UNKNOWN_USERNAME = 'unknown';
 
-/** Liderlik tablosunda gösterilen kullanıcı bilgileri. */
 interface UserProfile {
   username: string;
   country: string | null;
@@ -122,7 +120,6 @@ export class LeaderboardService {
     return `pool:${seasonId}`;
   }
 
-  /** Oyuncu profilinin (ad + ülke) cache anahtarı. */
   private profileKey(userId: string): string {
     return `profile:${userId}`;
   }
@@ -210,7 +207,6 @@ export class LeaderboardService {
     const results = await pipeline.exec();
     const totalScore = Number(results?.[0]?.[1] ?? 0);
 
-    // 3) Denetim kaydı.
     try {
       await this.events.record({
         userId,

@@ -19,19 +19,14 @@ export interface IdentifyResult {
 /**
  * Kimlik SEÇİMİ — kimlik doğrulama değil.
  *
- * Case bir login akışı istemiyor, ancak "oyuncu kendi sırasını görsün"
- * diyor. Bu ikisi çelişmez: kendi sırasını görmek için sunucunun "kim
- * olduğunu" bilmesi yeter, "kim olduğunu KANITLAMASI" gerekmez.
+ * Case login istemiyor ama "oyuncu kendi sırasını görsün" diyor; kendi
+ * sırasını görmek için sunucunun kim olduğunu bilmesi yeter, kanıtlaması
+ * gerekmez. Üretilen token gerçek bir JWT'dir ve korumalı uçlar onu normal
+ * guard'dan geçirir — mimari üretim kalitesindedir, yalnızca kanıtlama adımı
+ * yoktur.
  *
- * Bu yüzden burada şifre yoktur. İstemci hangi oyuncu olarak bakmak
- * istediğini söyler, sunucu o oyuncu için imzalı bir token üretir. Token'ın
- * kendisi gerçek bir JWT'dir ve tüm korumalı uçlar onu normal şekilde
- * doğrular — yani auth MİMARİSİ üretim kalitesindedir, yalnızca kimlik
- * kanıtlama adımı demo gereği atlanmıştır.
- *
- * `mode` parametresi jürinin işini kolaylaştırmak içindir: ilk 100 dışındaki
- * bir oyuncu olarak bakmak için önce tabloyu tarayıp bir kullanıcı adı
- * bulmak gerekmez, `mode: "outside"` yeterlidir.
+ * `mode` parametresi senaryoları tek çağrıyla açar: ilk 100 dışındaki bir
+ * oyuncu olarak bakmak için tabloyu tarayıp kullanıcı adı aramak gerekmez.
  */
 @Injectable()
 export class AuthService {
@@ -134,7 +129,6 @@ export class AuthService {
     return user;
   }
 
-  /** Modun sıralamadaki 0-tabanlı karşılığı. */
   private indexForMode(
     mode: NonNullable<IdentifyDto['mode']>,
     total: number,
