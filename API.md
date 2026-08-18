@@ -7,13 +7,13 @@ Bu doküman frontend'in ihtiyaç duyduğu her şeyi içerir: uçlar, tipler, ak�
 
 ---
 
-## 1. Kimlik: login yok, "oyuncu seç" var
+## 1. Oyuncu kimliği
 
-Case bir login akışı istemiyor, ama *"players should clearly see **their own** ranking"* diyor. Bu ikisi çelişmez: sunucunun **kim olduğunu bilmesi** yeter, **kanıtlamasını istemek** gerekmez.
+Case *"players should clearly see **their own** ranking"* diyor: `/leaderboard/around` gibi uçlar "**benim** sıram" sorusunu yanıtladığı için sunucunun isteği atanın kim olduğunu bilmesi gerekir.
 
-Çözüm: **oyuncu kimliğine bürünme.** Frontend "hangi oyuncu olarak bakıyorum?" der, backend o oyuncu için gerçek bir JWT üretir. Şifre yok, kayıt yok, e-posta yok.
+Oyuncu bir kez kimliğini seçer, backend o oyuncu için imzalı bir JWT üretir. **Şifre, kayıt veya login ekranı yoktur** — frontend açılışta bu ucu bir kez çağırır, kullanıcı hiçbir şey yapmaz.
 
-> **Önemli:** Token gerçek bir JWT'dir ve tüm korumalı uçlar onu normal guard'dan geçirir. Yani **auth mimarisi üretim kalitesindedir**; yalnızca "kimliği kanıtlama" adımı demo gereği atlanmıştır. Gerçek bir oyunda bu ucun yerine oyunun kendi login'i gelir, arkasındaki hiçbir şey değişmez.
+> **Önemli:** Token gerçek bir JWT'dir ve tüm korumalı uçlar onu normal guard'dan geçirir. Yani **auth mimarisi üretim kalitesindedir**; yalnızca "kimliği kanıtlama" adımı demo gereği atlanmıştır. Gerçek bir oyunda bu ucun yerine oyunun kendi kimlik akışı gelir, arkasındaki hiçbir şey değişmez.
 
 ### `POST /api/auth/identify`
 

@@ -175,22 +175,17 @@ Sunucu `http://localhost:8080` adresinde çalışır.
 
 Tüm iş uçları `/api` altındadır. Kök yol (`/`) sağlık kontrolü olarak prefix dışında tutulur.
 
-### Kimlik: login yok, "oyuncu seç" var
+### Oyuncu kimliği
 
-Case bir login akışı istemiyor ama *"players should clearly see **their own** ranking"* diyor. İkisi çelişmez: sunucunun **kim olduğunu bilmesi** yeter, **kanıtlamasını istemek** gerekmez.
-
-Çözüm oyuncu kimliğine bürünmedir — şifre, kayıt, e-posta yoktur:
+Case *"players should clearly see **their own** ranking"* diyor: sunucunun isteği atanın kim olduğunu bilmesi gerekir. Bunun için oyuncu bir kez kimliğini seçer, sunucu o oyuncu için imzalı bir JWT üretir — şifre, kayıt veya login ekranı yoktur.
 
 ```bash
-curl -X POST $BASE/auth/identify -H 'Content-Type: application/json' \
-  -d '{"mode":"outside"}'      # 121. sıradaki oyuncu olarak bak
+curl -X POST $BASE/auth/identify -H 'Content-Type: application/json' -d '{}'
 ```
 
-`mode` değerleri her senaryoyu tek çağrıyla açar: `top` (zirve), `mid` (orta), **`outside`** (ilk 100 dışı — "3 üst / 2 alt" penceresi), `unranked` (`rank: null` ekranı), `random`. `{"role":"admin"}` eklenirse ödül dağıtımını denemek için admin token üretilir.
+`mode` parametresi her senaryoyu tek çağrıyla açar: `top`, `mid`, **`outside`** (ilk 100 dışı — "3 üst / 2 alt" penceresi), `unranked` (`rank: null` durumu), `random`.
 
-> Üretilen **token gerçek bir JWT'dir** ve tüm korumalı uçlar onu normal guard'dan geçirir: auth mimarisi üretim kalitesindedir, yalnızca kimliği *kanıtlama* adımı demo gereği atlanmıştır. Gerçek bir oyunda bu ucun yerine oyunun kendi login'i gelir, arkasındaki hiçbir şey değişmez.
->
-> **Üretim notu:** `role: "admin"` alanının istemciden kabul edilmesi demo içindir; gerçek dağıtımda kaldırılmalıdır.
+> Üretilen token gerçek bir JWT'dir ve tüm korumalı uçlar onu normal guard'dan geçirir; gerçek bir oyunda bu ucun yerine oyunun kendi kimlik akışı gelir, arkasındaki hiçbir şey değişmez.
 
 ### Yetkilendirme — sıfır I/O
 
