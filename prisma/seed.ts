@@ -20,8 +20,8 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import Redis from 'ioredis';
 import mongoose from 'mongoose';
 import { PrismaClient } from '../generated/prisma/client';
-import { getCurrentSeasonId } from '../src/common/season.util';
-import { PRIZE_POOL_RATE } from '../src/rewards/reward-math';
+import { getCurrentSeasonId } from '../src/common/utils/season.util';
+import { PRIZE_POOL_RATE } from '../src/rewards/domain/reward-math';
 
 /** Örnek oyuncuların kullanıcı adı öneki — temizlik bu önekle yapılır. */
 const SEED_PREFIX = 'demo_';

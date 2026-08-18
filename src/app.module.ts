@@ -27,10 +27,7 @@ import { envValidationSchema } from './infrastructure/config/env.validation';
     MongooseModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        // Bağlantı adresi yalnızca .env'den okunur, koda gömülmez.
         uri: config.getOrThrow<string>('MONGO_URI'),
-        // MONGO_URI'de veritabanı adı yok (path boş); belirtilmezse Mongoose
-        // sessizce varsayılan "test" veritabanına yazar.
         dbName: 'leaderboard',
       }),
     }),

@@ -5,7 +5,10 @@ import {
   FastifyAdapter,
   NestFastifyApplication,
 } from '@nestjs/platform-fastify';
+import type Redis from 'ioredis';
 import { AppModule } from '../src/app.module';
+import { REDIS_CLIENT } from '../src/infrastructure/redis/redis.constants';
+import { getCurrentSeasonId } from '../src/common/utils/season.util';
 
 /**
  * Uygulama Fastify üzerinde çalışır; test de aynı adaptörü kurmalıdır.
@@ -15,6 +18,16 @@ import { AppModule } from '../src/app.module';
  * Prefix kurulumu main.ts ile birebir aynı tutulur: kök yol hariç tutulduğu
  * için sağlık kontrolü / üzerinde kalır, iş uçları /api altına iner.
  */
+/**
+ * Testin skor gönderdiği sahte kullanıcı. Postgres'te KARŞILIĞI YOKTUR;
+ * yalnızca yazma yolunun uçtan uca çalıştığını doğrulamak için vardır ve
+ * `afterAll` içinde sıralamadan silinir.
+ */
+const E2E_SCORING_USER = 'e2e-scoring-user';
+
+/** delta=1 için havuza giden kuruş (PRIZE_POOL_RATE = 0.02 -> 2 kuruş). */
+const E2E_POOL_CONTRIBUTION_MINOR = 2;
+
 describe('Uygulama (e2e)', () => {
   let app: NestFastifyApplication;
 
@@ -175,22 +188,41 @@ describe('Uygulama (e2e)', () => {
     }
   });
 
-  it('skor gönderimi admin rolü gerektirmez', async () => {
-    // Rol koruması yalnızca dağıtım ucuna eklendi; oyun akışı etkilenmemeli.
+  it('geçerli token ile skor gönderilebilir', async () => {
     const jwt = app.get(JwtService);
-    const token = jwt.sign({ sub: 'e2e-player-2', roles: ['player'] });
+    const token = jwt.sign({ sub: E2E_SCORING_USER });
 
     const res = await app.inject({
       method: 'POST',
       url: '/api/score',
       headers: { authorization: `Bearer ${token}` },
-      payload: { delta: 1, source: 'e2e_rbac' },
+      payload: { delta: 1, source: 'e2e_score' },
     });
 
     expect(res.statusCode).toBe(201);
   });
 
+  /**
+   * Testin Redis'te bıraktığı izleri temizler.
+   *
+   * `POST /api/score` gerçek bir yazma yapar: sahte kullanıcı canlı sezonun
+   * ZSET'ine girer ve orada kalır. Sıralamadan oyuncu seçen uçlar
+   * (`/auth/identify?mode=...`) bu üyeyi seçip Postgres'te bulamayınca 404
+   * döner — yani test, kendisinden sonra çalışan her şeyi bozar.
+   *
+   * Havuz katkısı da geri alınır; aksi halde her test koşusu ödül havuzunu
+   * birkaç kuruş şişirirdi.
+   */
   afterAll(async () => {
+    const redis = app.get<Redis>(REDIS_CLIENT);
+    const seasonId = getCurrentSeasonId();
+
+    await redis
+      .pipeline()
+      .zrem(`lb:${seasonId}`, E2E_SCORING_USER)
+      .decrby(`pool:${seasonId}`, E2E_POOL_CONTRIBUTION_MINOR)
+      .exec();
+
     await app.close();
   });
 });
