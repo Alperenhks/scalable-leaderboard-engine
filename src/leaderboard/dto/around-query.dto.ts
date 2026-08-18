@@ -7,8 +7,8 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { SEASON_ID_REGEX } from '../../common/season.util';
 import { TOP_WINDOW_SIZE } from '../leaderboard.service';
+import { IsSeasonId } from '../../common/decorators/is-season-id.decorator';
 
 /**
  * GET /api/leaderboard/around sorgu parametreleri.
@@ -24,11 +24,7 @@ export class AroundQueryDto {
   @Max(TOP_WINDOW_SIZE)
   limit: number = TOP_WINDOW_SIZE;
 
-  @IsOptional()
-  @IsString()
-  @Matches(SEASON_ID_REGEX, {
-    message: 'seasonId biçimi YYYY-Www olmalıdır, ör. 2026-W34',
-  })
+  @IsSeasonId()
   seasonId?: string;
 
   /**

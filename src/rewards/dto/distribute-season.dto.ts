@@ -1,5 +1,4 @@
-import { IsOptional, IsString, Matches } from 'class-validator';
-import { SEASON_ID_REGEX } from '../../common/season.util';
+import { IsSeasonId } from '../../common/decorators/is-season-id.decorator';
 
 /**
  * Manuel dağıtım gövdesi.
@@ -9,10 +8,6 @@ import { SEASON_ID_REGEX } from '../../common/season.util';
  * bir önceki hafta varsayılır.
  */
 export class DistributeSeasonDto {
-  @IsOptional()
-  @IsString()
-  @Matches(SEASON_ID_REGEX, {
-    message: 'seasonId biçimi YYYY-Www olmalıdır, ör. 2026-W34',
-  })
+  @IsSeasonId()
   seasonId?: string;
 }

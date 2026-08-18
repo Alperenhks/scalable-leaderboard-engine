@@ -1,5 +1,4 @@
-import { IsOptional, IsString, Matches } from 'class-validator';
-import { SEASON_ID_REGEX } from '../season.util';
+import { IsSeasonId } from '../decorators/is-season-id.decorator';
 
 /**
  * Yalnızca `seasonId` taşıyan sorgular için ortak DTO.
@@ -12,10 +11,6 @@ import { SEASON_ID_REGEX } from '../season.util';
  * girmesini engeller.
  */
 export class SeasonQueryDto {
-  @IsOptional()
-  @IsString()
-  @Matches(SEASON_ID_REGEX, {
-    message: 'seasonId biçimi YYYY-Www olmalıdır, ör. 2026-W34',
-  })
+  @IsSeasonId()
   seasonId?: string;
 }

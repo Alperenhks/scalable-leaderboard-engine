@@ -7,7 +7,7 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { SEASON_ID_REGEX } from '../../common/season.util';
+import { IsSeasonId } from '../../common/decorators/is-season-id.decorator';
 
 /**
  * GET /api/leaderboard sorgu parametreleri.
@@ -39,11 +39,7 @@ export class LeaderboardQueryDto {
 
   /// Geçmiş sezon okumaları zararsız ve kullanışlıdır; yazmanın aksine serbesttir.
   /// Verilmezse sunucu o anki sezonu kullanır.
-  @IsOptional()
-  @IsString()
-  @Matches(SEASON_ID_REGEX, {
-    message: 'seasonId biçimi YYYY-Www olmalıdır, ör. 2026-W34',
-  })
+  @IsSeasonId()
   seasonId?: string;
 
   /**
