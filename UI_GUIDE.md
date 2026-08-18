@@ -66,9 +66,20 @@ Yukarıdan aşağı, önem sırasına göre:
 
 Bu ekranın **var oluş sebebi**. İki durum var ve ikisi görsel olarak farklı olmalı.
 
+> **Kolay yol:** `around` yanıtındaki **`neighbours`** alanı her üç durumda da doğru çalışır — oyuncu 1. sırada da olsa, 121. sırada da olsa "3 üst + sen + 2 alt" verir. Aşağıdaki durum ayrımı `entries` (ana liste) içindir.
+
 ### Durum A — Oyuncu ilk 100'de (`inTopWindow: true`)
 
 Oyuncu zaten listede. Ayrı bir bölüm göstermeye gerek yok, sadece **satırını vurgula**.
+
+Yine de "senin çevren" mini kartı göstermek istersen `neighbours` kullan — 1. sıradaki oyuncuda üstte kimse çıkmaz, uydurma satır üretilmez:
+
+```
+👑 SEN 1. SIRADASIN
+▶  1  demo_neon_pilot     🇹🇷  4.5M   ← sen (üstünde kimse yok)
+   2  demo_cosmic_baron   🇺🇸  4.4M   ↓ 50.692 puan geride
+   3  demo_neon_baron     🇩🇪  4.4M
+```
 
 ```
    99  demo_wild_tiger      🇫🇷  3.7M

@@ -115,6 +115,7 @@ Oyuncu ilk 100'ün dışındaysa bile kaybolmaz.
 {
   "seasonId": "2026-W34", "userId": "cmsx...", "rank": 121, "score": 3696088,
   "total": 4950, "inTopWindow": false,
+  "neighbours": [ /* 3 üst + sen + 2 alt — aşağıya bakınız */ ],
   "entries": [
     { "rank": 118, "username": "demo_royal_falcon_173",  "score": 3702117, "country": "DE", "isCurrentUser": false },
     { "rank": 119, "username": "demo_shadow_phoenix_84", "score": 3701803, "country": "BR", "isCurrentUser": false },
@@ -126,8 +127,37 @@ Oyuncu ilk 100'ün dışındaysa bile kaybolmaz.
 }
 ```
 
+**`neighbours` — daima kendi çevren (yeni)**
+
+`entries`den bağımsız, **her zaman** kişiye özel bir alan: 3 üst + sen + 2 alt. Oyuncu ilk 100'ün içinde olsa bile dolu gelir.
+
+Tablonun sınırlarında **kırpılır** — uydurma satır üretilmez:
+
+| Sıra | Üstünde | Altında | Toplam |
+| --- | --- | --- | --- |
+| 1. | 0 | 2 | 3 kayıt |
+| 2. | 1 | 2 | 4 kayıt |
+| 3. | 2 | 2 | 5 kayıt |
+| 4. ve sonrası | 3 | 2 | 6 kayıt |
+| Sondan 2. | 3 | 1 | 5 kayıt |
+| Son | 3 | 0 | 4 kayıt |
+
+```jsonc
+// 1. sıradaki oyuncu — üstünde kimse yok
+"neighbours": [
+  { "rank": 1, "username": "demo_neon_pilot_5",   "score": 4526619, "isCurrentUser": true  },
+  { "rank": 2, "username": "demo_cosmic_baron_20","score": 4475927, "isCurrentUser": false },
+  { "rank": 3, "username": "demo_neon_baron_40",  "score": 4456299, "isCurrentUser": false }
+]
+```
+
+Oyuncunun sırası yoksa (`rank: null`) `neighbours` **boş dizidir**.
+
+> ⚠️ Uzunluğu 3-6 arasında değişir, **sabit varsayma**. Kendi satırını bulmanın tek güvenilir yolu `isCurrentUser`.
+
 **Frontend notları:**
 - `isCurrentUser: true` olan satırı görsel olarak vurgula — bu özelliğin bütün amacı bu.
+- **`neighbours` kullan**, kendi çevreni göstermek için: ilk 100'de olsun olmasın hep doğru çalışır.
 - `inTopWindow: true` ise ayrı bir "senin sıran" bölümü göstermeye gerek yok, oyuncu zaten listede.
 - `rank: null` ise oyuncu bu hafta hiç oynamamış: pencere yerine tablonun başı döner. "Skor gönder, sıralamaya gir" mesajı için doğru an.
 - Oyuncu tablonun son 2 sırasındaysa 6 yerine 5 veya 4 kayıt gelebilir (aşağıda kimse yok) — liste uzunluğunu sabit varsayma.

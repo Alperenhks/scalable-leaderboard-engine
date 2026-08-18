@@ -40,6 +40,14 @@ export interface AroundLeaderboard {
   /** Oyuncu ilk 100'deyse true — bu durumda entries ilk 100'ün başıdır. */
   inTopWindow: boolean;
   entries: Array<LeaderboardEntry & { isCurrentUser: boolean }>;
+  /**
+   * Oyuncunun DAİMA kendi çevresi: 3 üst + kendisi + 2 alt.
+   *
+   * `entries`den bağımsızdır: oyuncu ilk 100'de olsa bile burası kişiye
+   * özeldir. Tablonun sınırlarında kırpılır (1. sırada üstte kimse yoktur),
+   * bu yüzden uzunluğu 3-6 arasında değişir.
+   */
+  neighbours: Array<LeaderboardEntry & { isCurrentUser: boolean }>;
 }
 
 /** Postgres'te bulunamayan kullanıcı için gösterilecek ad. */
@@ -400,6 +408,9 @@ export class LeaderboardService {
         score: 0,
         total,
         inTopWindow: false,
+        // Sırası olmayan oyuncunun komşusu da yoktur — boş dizi döner ve
+        // frontend "henüz sıralamada değilsin" ekranını gösterir.
+        neighbours: [],
         entries: head.entries.map((e) => ({ ...e, isCurrentUser: false })),
       };
     }
@@ -411,7 +422,10 @@ export class LeaderboardService {
     const start = inTopWindow ? 0 : rawRank - NEIGHBOURS_ABOVE;
     const stop = inTopWindow ? limit - 1 : rawRank + NEIGHBOURS_BELOW;
 
-    const flat = await this.redis.zrevrange(key, start, stop, 'WITHSCORES');
+    const [flat, neighbours] = await Promise.all([
+      this.redis.zrevrange(key, start, stop, 'WITHSCORES'),
+      this.getNeighbourWindow(key, rawRank, total),
+    ]);
     const entries = await this.enrich(this.parseRange(flat, start));
 
     return {
@@ -421,11 +435,47 @@ export class LeaderboardService {
       score: rawScore === null ? 0 : Number(rawScore),
       total,
       inTopWindow,
+      neighbours,
       entries: entries.map((e) => ({
         ...e,
         isCurrentUser: e.userId === userId,
       })),
     };
+  }
+
+  /**
+   * Oyuncunun DAİMA kendi çevresi: 3 üst + kendisi + 2 alt.
+   *
+   * `entries`den farkı, ilk 100 içindeyken de kişiye özel olmasıdır. Oyuncu
+   * 1. sıradaysa üstünde kimse yoktur ve uydurma satır üretilmez — pencere
+   * tablonun sınırlarında KIRPILIR:
+   *
+   *   1. sıra  -> 0 üst + kendisi + 2 alt = 3 kayıt
+   *   2. sıra  -> 1 üst + kendisi + 2 alt = 4 kayıt
+   *   3. sıra  -> 2 üst + kendisi + 2 alt = 5 kayıt
+   *   4+ sıra  -> 3 üst + kendisi + 2 alt = 6 kayıt
+   *   son sıra -> 3 üst + kendisi + 0 alt = 4 kayıt
+   *
+   * Bu yüzden dizi uzunluğu sabit varsayılmamalıdır; `isCurrentUser` ile
+   * kendi satırını bulmak tek güvenilir yoldur.
+   */
+  private async getNeighbourWindow(
+    key: string,
+    rawRank: number,
+    total: number,
+  ): Promise<Array<LeaderboardEntry & { isCurrentUser: boolean }>> {
+    // Math.max/min: tablonun dışına taşan aralık Redis'te boş sonuç verirdi.
+    const start = Math.max(0, rawRank - NEIGHBOURS_ABOVE);
+    const stop = Math.min(total - 1, rawRank + NEIGHBOURS_BELOW);
+    if (start > stop) return [];
+
+    const flat = await this.redis.zrevrange(key, start, stop, 'WITHSCORES');
+    const entries = await this.enrich(this.parseRange(flat, start));
+
+    return entries.map((e) => ({
+      ...e,
+      isCurrentUser: e.rank === rawRank + 1,
+    }));
   }
 
   /**
