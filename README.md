@@ -37,13 +37,25 @@ Hiçbir servis yerel makineye bağlı değildir; üç veri deposu da yönetilen 
 
 Bağlantı bilgilerinin hiçbiri koda gömülü değildir; tümü `.env` üzerinden okunur ve açılışta Joi ile doğrulanır.
 
-### ⚠️ Render ücretsiz katman: soğuk başlangıç
+### Soğuk başlangıç ve nasıl çözüldüğü
 
-Backend ücretsiz planda çalışır ve **15 dakika istek almazsa uykuya geçer.** Uyandıktan sonraki ilk istek **~50 saniye** sürebilir; sonraki istekler normal hızındadır.
+Backend, Render'ın **ücretsiz** planında çalışır ve bu planın bilinen bir davranışı vardır: 15 dakika istek almayan servis uykuya alınır, sonraki ilk istek konteyner ayağa kalkarken **~50 saniye** bekler.
 
-Bu bir hata değil, planın davranışıdır. Frontend'in bunu kullanıcıya bildirmesi gerekir — frontend'in açılışta bir uyandırma isteği atması ve aşamalı bir yükleniyor mesajı göstermesi yeterlidir.
+Bu bir uygulama sorunu değildi — servis uyanıkken ölçülen yanıt süresi 75-80 ms'dir (bkz. [Performans](#performans--ölçülmüş)) — ama projeyi ilk kez açan biri için **ilk izlenim tam olarak o 50 saniyedir.** Teknik olarak açıklanabilir olması, deneyimi düzeltmez.
 
-Ücretli plana geçildiğinde bu davranış tamamen ortadan kalkar; kodda hiçbir değişiklik gerekmez.
+**Çözüm:** `.github/workflows/keep-alive.yml` her 10 dakikada bir sağlık ucuna istek atar; Render'ın boştalık sayacı hiçbir zaman 15 dakikaya ulaşmaz ve servis sürekli uyanık kalır.
+
+| Karar | Gerekçe |
+| --- | --- |
+| **10 dakika** aralık | GitHub Actions'ın `schedule` tetikleyicisi garantili değildir ve yoğun saatlerde birkaç dakika gecikebilir. 5 dakikalık pay, gecikmeye rağmen 15 dakikalık pencerenin içinde kalmayı sağlar. |
+| **`/` ucu** | Hiçbir veri deposuna dokunmaz. `/api/leaderboard` pinglemek Redis ve Postgres'te günde 144 gereksiz tur demek olurdu. |
+| **Kota güvenli** | Render ayda 750 saat verir, bir ay en fazla 744 saattir — tek servis kesintisiz uyanık dursa bile limit aşılmaz. |
+
+Ücretli plana geçildiğinde bu workflow gereksizleşir ve silinebilir; **kodda hiçbir değişiklik gerekmez** — uyku, planın bir özelliğidir, uygulamanın değil.
+
+#### Arayüz tarafındaki karşılığı
+
+Frontend yine de bu duruma karşı dayanıklı yazılmıştır: veriler gelene kadar iskelet (skeleton) ekranı gösterir ve bekleme uzarsa "sunucu uyandırılıyor" mesajına geçer. Ping mekanizması bir sebeple durursa bile boş ekranla karşılaşılmaz.
 
 ---
 

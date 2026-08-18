@@ -1,0 +1,57 @@
+# Render free tier'ı uyanık tutar.
+#
+# Sorun: Render'ın ücretsiz planı 15 dakika istek almayan servisi uykuya alır
+# ve uyanma ~50 saniye sürer. Ölçülen gerçek yanıt süresi 75-80 ms olduğu için
+# bu gecikme tamamen barındırma planından gelir, uygulamadan değil — ama
+# projeyi ilk kez açan biri için ilk izlenim budur.
+#
+# Çözüm: 10 dakikada bir sağlık ucuna istek atılır, boştalık sayacı hiç 15
+# dakikaya ulaşmaz. 10 seçildi çünkü GitHub Actions'ın `schedule` tetikleyicisi
+# garantili değildir ve yoğun saatlerde birkaç dakika gecikebilir; 5 dakikalık
+# pay, gecikmeye rağmen pencerenin içinde kalmayı sağlar.
+#
+# Kota: Render free tier ayda 750 saat verir, bir ay en fazla 744 saattir —
+# tek servis kesintisiz uyanık dursa bile limit aşılmaz.
+#
+# `/` ucu bilinçli seçildi: hiçbir veri deposuna dokunmaz, dolayısıyla ping
+# Postgres/Redis/Mongo üzerinde boşuna yük oluşturmaz.
+
+name: keep-alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  # Elle de tetiklenebilsin: deploy sonrası servisi hemen ısıtmak için.
+  workflow_dispatch:
+
+# Aynı anda birden fazla ping çalışmasın.
+concurrency:
+  group: keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Sağlık ucuna istek at
+        env:
+          # Adres repository variable ile değiştirilebilir; tanımlı değilse
+          # üretim adresine düşer.
+          TARGET: ${{ vars.KEEP_ALIVE_URL || 'https://scalable-leaderboard-engine.onrender.com/' }}
+        run: |
+          # Uyuyan servis ~50 sn'de kalkar; --max-time buna göre verilir.
+          # --retry: geçici bir 5xx yüzünden pencere kaçırılmasın.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' \
+            --max-time 90 \
+            --retry 2 --retry-delay 10 --retry-all-errors \
+            "$TARGET")
+
+          echo "HTTP $code — $TARGET"
+
+          # 2xx/3xx dışındaki her şey hatadır: workflow kırmızı olsun ki
+          # servisin gerçekten ayakta olmadığı fark edilsin.
+          if [ "$code" -lt 200 ] || [ "$code" -ge 400 ]; then
+            echo "::error::Servis beklenmeyen durum kodu döndürdü: $code"
+            exit 1
+          fi
