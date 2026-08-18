@@ -2,7 +2,9 @@
 
 2 milyon günlük aktif kullanıcılı bir mobil idle oyun (ör. *Airport Master*) için tasarlanmış, tamamen **stateless** ve yatayda ölçeklenebilir Liderlik Tablosu API'si.
 
-> **Durum:** Skor gönderimi, canlı liderlik tablosu, JWT kimlik doğrulaması, "3 üst / 2 alt" penceresi ve haftalık ödül dağıtımı çalışır durumda.
+> **Durum:** Skor gönderimi, canlı liderlik tablosu, JWT kimlik doğrulaması, "3 üst / 2 alt" penceresi, haftalık ödül dağıtımı, cüzdan/ödül geçmişi ve sezon geri sayımı çalışır durumda.
+>
+> **Frontend geliştiricisi:** Tam API sözleşmesi için **[API.md](API.md)** — uçlar, tipler, akışlar ve kırılmaz kurallar orada.
 
 ---
 
@@ -111,7 +113,23 @@ PgBouncer transaction mode bazı kurulumlarda interactive transaction ve prepare
 
 > **DDL için not:** `prisma db push` ve doğrudan `CREATE TABLE` / `CREATE INDEX` komutları bu kurulumda pooler üzerinden sınandı ve çalıştı. Yine de uzun süren migration'larda sorun yaşarsanız, `-pooler` ekini geçici olarak kaldırıp **direct** endpoint üzerinden çalıştırmak güvenli yoldur.
 
-### 6. Sunucuyu başlatın
+### 6. Örnek veriyi yükleyin
+
+```bash
+npm run seed                      # 5.000 oyuncu (~30 sn)
+npm run seed -- --players 50000   # daha büyük ölçek
+npm run seed -- --reset           # önce mevcut örnek veriyi temizler
+```
+
+Seed üç veri deposunun **hepsine** yazar: Postgres'e oyuncu kimlikleri, Redis'e canlı sıralama ve ödül havuzu, Mongo'ya temsili event log'ları.
+
+Üretilen veri bilinçli olarak gerçekçidir:
+
+- **Skor dağılımı üsteldir** — az sayıda çok yüksek skorlu oyuncu, geniş bir orta kitle, uzun bir kuyruk. Düz rastgele dağılım tabloyu yapay gösterirdi.
+- **Oyuncuların %1'i sıralama dışı bırakılır** — "bu hafta hiç oynamamış oyuncu" (`rank: null`) senaryosu ancak böyle test edilebilir. Herkese skor verilseydi bu kod yolu hiç görünmezdi.
+- **Rastgelelik deterministiktir** (sabit tohumlu mulberry32) — aynı komut her çalıştığında aynı tabloyu üretir, hata bildirimi tekrarlanabilir olur.
+
+### 7. Sunucuyu başlatın
 
 ```bash
 npm run start:dev
@@ -124,6 +142,51 @@ Sunucu `http://localhost:8080` adresinde çalışır.
 ## API
 
 Tüm iş uçları `/api` altındadır. Kök yol (`/`) sağlık kontrolü olarak prefix dışında tutulur.
+
+### CORS
+
+API'yi tarayıcıdan çağıran bir istemci (web paneli, demo arayüzü) olduğu için `main.ts` içinde CORS açıktır:
+
+| Ayar | Değer |
+| --- | --- |
+| `origin` | `http://localhost:3000` ve `/^https:\/\/.*\.vercel\.app$/` |
+| `methods` | `GET,HEAD,PUT,PATCH,POST,DELETE` |
+| `credentials` | `true` |
+
+İki origin bilinçli seçildi: yerel geliştirmede frontend `localhost:3000`'de çalışır, dağıtımda ise Vercel her deploy için farklı bir preview alan adı üretir (`proje-abc123.vercel.app`). Bunları tek tek listelemek her deploy'da yeni bir kod değişikliği gerektirirdi; regex bu yükü ortadan kaldırır.
+
+Fastify adapter kullanıldığı için CORS `@fastify/cors` üzerinden işlenir — regex origin desteği buradan gelir; ek kurulum gerekmez.
+
+> **Üretim notu:** `credentials: true` ile regex origin birlikte kullanıldığında, `*.vercel.app` altındaki **herhangi** bir site (başkasının Vercel projesi dahil) kimlik bilgisi taşıyan istek atabilir. Gerçek bir dağıtımda origin listesinin tek bir sabit alan adına daraltılması veya `ALLOWED_ORIGINS` ortam değişkeninden okunması gerekir.
+
+### Oyuncu kimliği: login yok, "oyuncu seç" var
+
+Case bir login akışı istemiyor ama *"players should clearly see **their own** ranking"* diyor. Bu ikisi çelişmez: sunucunun **kim olduğunu bilmesi** yeter, **kanıtlamasını istemek** gerekmez.
+
+Çözüm **oyuncu kimliğine bürünmedir**: istemci hangi oyuncu olarak baktığını söyler, sunucu o oyuncu için imzalı bir JWT üretir. Şifre, kayıt, e-posta yoktur.
+
+```bash
+curl -X POST http://localhost:8080/api/auth/identify \
+  -H 'Content-Type: application/json' -d '{"mode":"outside"}'
+```
+
+`mode` jürinin tek tıkla her senaryoyu denemesi içindir:
+
+| mode | Ne döndürür | Hangi özelliği açar |
+| --- | --- | --- |
+| `top` | 1. sıradaki oyuncu | Zirve görünümü |
+| `mid` | Tablonun ortası | Normal oyuncu |
+| `outside` | 121. sıra (ilk 100 dışı) | **"3 üst / 2 alt" penceresi** |
+| `unranked` | Bu hafta oynamamış oyuncu | `rank: null` ekranı |
+| `random` | Rastgele | Genel gezinme |
+
+`{"role":"admin"}` eklenirse admin yetkili token üretilir — ödül dağıtımını canlı denemek için.
+
+> **Token gerçek bir JWT'dir** ve tüm korumalı uçlar onu normal guard'dan geçirir. Yani auth **mimarisi üretim kalitesindedir**; yalnızca kimliği kanıtlama adımı demo gereği atlanmıştır. Gerçek bir oyunda bu ucun yerine oyunun kendi login'i gelir, arkasındaki hiçbir şey değişmez.
+>
+> **Üretim notu:** `role: "admin"` alanının istemciden kabul edilmesi yalnızca demo içindir. Gerçek dağıtımda bu alan kaldırılmalı ve admin token'ı yalnızca sunucu tarafında üretilmelidir.
+
+`GET /api/auth/players?search=&limit=&offset=` ile oyuncu listesi aranabilir — frontend'in "oyuncu seçici" ekranı bunu kullanır.
 
 ### Kimlik doğrulama ve yetkilendirme
 
@@ -258,6 +321,37 @@ Sezonun o ana kadar biriken ödül havuzu.
 { "seasonId": "2026-W34", "poolAmount": "210.00" }
 ```
 
+### `GET /api/rewards/season`
+
+Sezon durumu — frontend'in geri sayımı ve ödül tablosu için tek uç. Bitiş anı **sunucuda** hesaplanır: istemcinin yerel saatine bırakılsaydı farklı saat dilimlerindeki oyuncular farklı bir sezon sonu görürdü.
+
+```json
+{
+  "seasonId": "2026-W34", "isCurrentSeason": true,
+  "endsAt": "2026-08-24T00:00:00.000Z", "secondsRemaining": 517436,
+  "serverTime": "2026-08-18T00:16:03.885Z",
+  "poolAmount": "94018764.62", "playerCount": 4950,
+  "prizePoolRate": 0.02, "rewardedPlayerCount": 100,
+  "distribution": { "first": 0.2, "second": 0.15, "third": 0.1, "remaining": 0.55 }
+}
+```
+
+Ödül oranları da buradan yayınlanır ki frontend bunları kendi içine sabitlemek zorunda kalmasın.
+
+### Oyuncunun kendi verileri 🔒
+
+Case'in "haftalık ödül/durum iletişimi" gereksinimini karşılayan uçlar. Hepsi token'daki kimliğe bağlıdır; **başka bir oyuncunun cüzdanı veya ödül geçmişi hiçbir uçtan okunamaz** — sıralama herkese açıktır, para bilgisi değildir.
+
+| Uç | Döndürdüğü |
+| --- | --- |
+| `GET /api/me` | Birleşik durum: sıra, skor, bakiye, son ödül |
+| `GET /api/me/wallet` | Cüzdan bakiyesi ve sürüm sayacı |
+| `GET /api/me/rewards` | Ödül geçmişi ve toplam kazanç |
+
+`/api/me` bilinçli olarak birleştirilmiştir: frontend'in açılış ekranı bu verilerin hepsini birden ister, ayrı uçlara bölmek mobil bağlantıda üç ayrı gidiş-dönüş demek olurdu.
+
+> **Para alanları daima string'dir** (`balance`, `amount`, `poolAmount`). JSON `Number`'a çevrilirse kuruş hassasiyeti kaybolur — `Decimal(18,4)` kullanılmasının sebebi de budur.
+
 ### `POST /api/rewards/distribute` 🔒 **admin**
 
 Sezon ödüllerini dağıtır. `seasonId` verilmezse bir önceki hafta varsayılır (dağıtım bitmiş sezona uygulanır).
@@ -337,7 +431,20 @@ Negatif delta (ceza/düzeltme) havuzu **küçültmez**: bir oyuncuya kesilen cez
 | 3. | %10 |
 | 4–100 | kalan %55, **skorlarıyla orantılı** |
 
-4-100 aralığında eşit bölüşüm yerine skora oranlı dağıtım seçildi: 4. ile 100. oyuncunun katkısı arasında büyük fark olabilir ve eşit pay, sıralamanın bu aralıktaki anlamını tamamen silerdi.
+#### "based on their rank" ifadesinin yorumu
+
+Case metni 4-100 aralığı için *"distributed among players ranked 4th through 100th, **based on their rank**"* diyor. Bu ifade iki türlü okunabilir ve **sıraya değil skora oranlı** dağıtım seçildi:
+
+| Okuma | Ne yapar | Neden seçilmedi / seçildi |
+| --- | --- | --- |
+| Sıra ağırlıklı (ör. ağırlık = `101 - rank`) | 4. sıradaki 5. sıradakinden hep daha çok alır, skorları eşit olsa bile | Skor farkını tamamen yok sayar; 4. oyuncu 100.'nün iki katı skor yapmışsa bu görünmez |
+| **Skora oranlı (seçilen)** | Pay, oyuncunun o haftaki gerçek katkısıyla orantılı | Havuzun kaynağı skorun %2'si; havuza ne kadar katkı yaptıysan payın da o oranda olması tutarlı |
+
+Belirleyici gerekçe: **havuz skordan doğuyor.** Havuza giren para her oyuncunun kazandığı paranın %2'si olduğuna göre, geri dağıtımın da aynı ölçüye dayanması ekonomik olarak tutarlıdır. Sıra ağırlıklı dağıtımda skoru iki kat olan bir oyuncu yalnızca bir sıra farkı kadar fazla alırdı.
+
+Sıralamanın anlamı yine korunur: **ilk üç sıra sabit yüzdelerle (%20/%15/%10) ödüllendirilir** — orada sıra, skordan bağımsız olarak belirleyicidir. Skora oranlı bölüşüm yalnızca 4-100 kuyruğunda geçerlidir.
+
+> Sıra ağırlıklı dağıtım tercih edilirse değişiklik tek satırdır: `reward-math.ts` içinde ağırlık `allocation.score` yerine `REWARDED_PLAYER_COUNT + 1 - allocation.rank` olur. Dağıtımın geri kalanı (havuz koruma, yuvarlama artığı) aynen çalışır.
 
 ### Para hassasiyeti
 
@@ -417,21 +524,24 @@ Bu depo yalnızca backend'i barındırır; kaynak kod ayrı bir alt klasöre gö
 ├── AI_WORKFLOW.md           # Geliştirme sürecinin ve karar noktalarının kaydı
 ├── .env.example
 ├── prisma.config.ts         # DATABASE_URL'i process.env'den okur
+├── API.md                   # Frontend için tam API sözleşmesi
 ├── prisma/
-│   └── schema.prisma        # PostgreSQL şeması
+│   ├── schema.prisma        # PostgreSQL şeması
+│   └── seed.ts              # Örnek veri üreticisi (üç depoya birden yazar)
 ├── scripts/
-│   └── issue-token.js       # Geliştirme amaçlı JWT üretici
+│   └── issue-token.js       # CLI'dan JWT üretici (HTTP alternatifi: /api/auth/identify)
 └── src/
     ├── common/              # Sezon (ISO hafta) yardımcıları
     ├── config/              # .env doğrulama şeması
     ├── prisma/              # PrismaService (global modül)
     ├── redis/               # Redis client sağlayıcısı (global modül)
-    ├── auth/                # JWT guard, RolesGuard, @CurrentUser (global modül)
+    ├── auth/                # JWT guard, RolesGuard, @CurrentUser + kimlik seçimi
     ├── events/              # Mongoose skor event şeması + EventsService
     ├── leaderboard/         # ZSET servisi, controller, DTO'lar
-    ├── rewards/             # Ödül matematiği, dağıtım servisi, cron
+    ├── players/             # Oyuncunun kendi verileri: cüzdan, ödül geçmişi
+    ├── rewards/             # Ödül matematiği, dağıtım servisi, cron, sezon durumu
     ├── app.module.ts        # Üç veri deposunun bağlandığı kök modül
-    └── main.ts              # Fastify bootstrap
+    └── main.ts              # Fastify bootstrap + CORS
 ```
 
 ---

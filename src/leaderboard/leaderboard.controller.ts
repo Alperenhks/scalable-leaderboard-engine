@@ -3,6 +3,7 @@ import { LeaderboardService } from './leaderboard.service';
 import { SubmitScoreDto } from './dto/submit-score.dto';
 import { LeaderboardQueryDto } from './dto/leaderboard-query.dto';
 import { AroundQueryDto } from './dto/around-query.dto';
+import { SeasonQueryDto } from '../common/dto/season-query.dto';
 import { getCurrentSeasonId } from '../common/season.util';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -66,16 +67,23 @@ export class LeaderboardController {
     );
   }
 
-  /** Oyuncunun kendi sırası — tabloyu çekmeden tek kayıt sorgusu. */
+  /**
+   * Oyuncunun kendi sırası — tabloyu çekmeden tek kayıt sorgusu.
+   *
+   * seasonId ham @Query yerine DTO ile alınır: ValidationPipe yalnızca DTO
+   * sınıfları üzerinde çalışır, ham string parametrede devreye girmez. Ham
+   * bırakıldığında geçersiz bir sezon (ör. "BADFORMAT") 400 yerine 200
+   * dönüyor ve doğrulanmamış girdi Redis anahtar adına giriyordu.
+   */
   @Get('leaderboard/rank')
   @UseGuards(JwtAuthGuard)
   async getUserRank(
     @CurrentUser('sub') userId: string,
-    @Query('seasonId') seasonId?: string,
+    @Query() query: SeasonQueryDto,
   ) {
     return this.leaderboard.getUserRank(
       userId,
-      seasonId ?? getCurrentSeasonId(),
+      query.seasonId ?? getCurrentSeasonId(),
     );
   }
 }

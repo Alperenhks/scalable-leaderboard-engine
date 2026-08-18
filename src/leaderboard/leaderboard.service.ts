@@ -303,6 +303,44 @@ export class LeaderboardService {
   }
 
   /**
+   * Birden çok oyuncunun sırasını TEK pipeline ile sorgular.
+   *
+   * Oyuncu başına ayrı ZREVRANK, 500 kayıtta 500 ağ turu demektir; pipeline
+   * bunu tek gidiş-dönüşe indirir. Sırası olmayan oyuncu için null döner ve
+   * bu değer asla 0'a çevrilmez — 0 "birincilik" anlamına gelirdi.
+   */
+  async getRanksOf(
+    seasonId: string,
+    userIds: string[],
+  ): Promise<Array<number | null>> {
+    if (userIds.length === 0) return [];
+
+    const key = this.key(seasonId);
+    const pipeline = this.redis.pipeline();
+    for (const userId of userIds) pipeline.zrevrank(key, userId);
+    const results = await pipeline.exec();
+
+    return userIds.map((_, i) => {
+      const rank = results?.[i]?.[1] as number | null | undefined;
+      return rank === null || rank === undefined ? null : rank + 1;
+    });
+  }
+
+  /**
+   * Sıralamadaki verilen aralığın yalnızca userId'lerini verir (skorsuz).
+   *
+   * Kimlik seçimi (AuthService) sıradaki bir oyuncuyu bulmak için kullanır;
+   * ad ve skor gerekmediği için WITHSCORES yükü taşınmaz.
+   */
+  async getUserIdsAtRange(
+    seasonId: string,
+    start: number,
+    stop: number,
+  ): Promise<string[]> {
+    return this.redis.zrevrange(this.key(seasonId), start, stop);
+  }
+
+  /**
    * Sıralamanın ilk N kaydı.
    *
    * 2M satırın sıralanması tamamen Redis'te kalır. Postgres'e yalnızca görünen

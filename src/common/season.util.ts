@@ -41,3 +41,34 @@ export function getCurrentSeasonId(now: Date = new Date()): string {
   // Yıl, kaydırılmış Perşembe'den alınır — takvim yılından değil.
   return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
+
+/**
+ * İçinde bulunulan ISO haftasının bitiş anı (bir sonraki Pazartesi 00:00 UTC).
+ *
+ * Frontend'in "yeni sezona 2 gün 4 saat" geri sayımı için gereklidir. Hesap
+ * sunucuda yapılır: istemcinin yerel saatine bırakılsaydı farklı saat
+ * dilimlerindeki oyuncular farklı bitiş zamanı görürdü — oysa sezon sınırı
+ * herkes için aynı UTC anıdır.
+ */
+export function getSeasonEndsAt(now: Date = new Date()): Date {
+  const date = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+  );
+
+  // Pazar 0 döner; ISO'da Pazar 7. gündür. Haftanın kalan gün sayısı bulunur.
+  const dayOfWeek = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + (8 - dayOfWeek));
+
+  return date;
+}
+
+/**
+ * Sezonun başlangıç anı (o haftanın Pazartesi 00:00 UTC).
+ *
+ * Geri sayım çubuğunun "haftanın ne kadarı geçti" oranını hesaplayabilmesi
+ * için bitiş kadar başlangıç da gerekir.
+ */
+export function getSeasonStartsAt(now: Date = new Date()): Date {
+  const end = getSeasonEndsAt(now);
+  return new Date(end.getTime() - 7 * 86_400_000);
+}

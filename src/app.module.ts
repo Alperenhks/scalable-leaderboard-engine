@@ -9,6 +9,8 @@ import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { RewardsModule } from './rewards/rewards.module';
+import { IdentityModule } from './auth/identity.module';
+import { PlayersModule } from './players/players.module';
 import { envValidationSchema } from './config/env.validation';
 
 /**
@@ -40,6 +42,8 @@ import { envValidationSchema } from './config/env.validation';
     AuthModule,
     LeaderboardModule,
     RewardsModule,
+    IdentityModule,
+    PlayersModule,
   ],
   controllers: [AppController],
   providers: [AppService],
