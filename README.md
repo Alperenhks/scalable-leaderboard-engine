@@ -444,6 +444,84 @@ curl -X POST http://localhost:8080/api/rewards/distribute \
 
 ---
 
+## Performans — ölçülmüş
+
+Tüm sayılar **canlı dağıtıma** karşı alınmıştır (Render + Neon + Upstash + Atlas); yerel makinede değil. Ölçüm araçları depoda: `perf/run-benchmark.sh` (autocannon) ve `perf/plot.py` (matplotlib).
+
+### Gerçek kullanıcı deneyimi
+
+Asıl soru şu: *oyuncu ekranı açtığında ne kadar bekliyor?*
+
+![Tarayıcı ölçümü](perf/charts/browser.png)
+
+Canlı frontend'den (Vercel) canlı backend'e (Render) atılan açılış istekleri: **69-76 ms**, altısı da paralel gittiği için **sayfa 76 ms'de hazır**. Case'in *"make the leaderboard instant"* isteği karşılanmış durumda; *"page freezes"* şikâyetinin karşılığı yok — hata oranı sıfır.
+
+> Bu tablo yük testi değil, tek kullanıcının gerçek deneyimidir. Aşağıdaki yük testleri ise sunucunun **tavanını** ölçer: 50-100 eşzamanlı bağlantı altında kuyruk oluşur ve gecikme doğal olarak şişer.
+
+### Eşzamanlılık altında davranış
+
+![Ölçekleme](perf/charts/scaling.png)
+
+Verim ~117 RPS'te doygunluğa ulaşıyor ve gecikme oradan sonra lineer artıyor — klasik doygunluk eğrisi. Kırılma yok, hata yok: sistem aşırı yükte çökmüyor, sadece yavaşlıyor.
+
+### Uç bazında verim
+
+![Uçlar](perf/charts/endpoints.png)
+
+Yalnızca Redis'e giden uçlar (`season`, `rank`) beklendiği gibi en hızlısı. `leaderboard` ve `around` ek olarak ad çözümlemesi yapar; `me` ise Postgres'ten cüzdan ve ödül kaydı okuduğu için en maliyetli olanıdır.
+
+### Sayfa boyutunun maliyeti
+
+![Sayfa boyutu](perf/charts/page-size.png)
+
+`limit` 10'dan 100'e çıkarken maliyet **10 kat değil ~1.4 kat** artıyor. Sıralama Redis'te O(log N + M) olduğu ve Postgres'e yalnızca görünen sayfanın adları için tek sorgu gittiği için maliyet sayfa boyutuyla orantılıdır, tablo boyutuyla değil.
+
+### Profil cache'i: ölçüm → teşhis → düzeltme
+
+İlk ölçümde `leaderboard` beklenenden yavaştı. Teşhis için her veri deposuna tek tek gecikme ölçüldü:
+
+| İşlem | Süre |
+|---|---|
+| Redis `ZREVRANGE` 100 üye | 62.9 ms |
+| Postgres `findMany` 100 ad | 68.2 ms |
+| Postgres **`SELECT 1`** | **57.0 ms** |
+
+`SELECT 1` bile 57 ms sürüyordu — yani maliyet satır sayısından değil, **gidiş-dönüşün kendisinden** geliyordu. Kullanıcı adı ve ülke ise pratikte hiç değişmeyen veriler.
+
+Çözüm: profiller Redis'te cache'lenir (24 saat TTL) ve `around` ucundaki iki ayrı arama tek pipeline'da birleştirilir.
+
+| Uç | Önce | Sonra | Kazanç |
+|---|---|---|---|
+| `leaderboard?limit=100` | 66 RPS | **117 RPS** | +77% |
+| `around` | 77 RPS | **153 RPS** | +99% |
+
+TTL sonsuz değildir: bir ad değişikliği en geç bir gün içinde yansır.
+
+### 2M DAU için ne gerekir?
+
+![Kapasite](perf/charts/capacity.png)
+
+| | |
+|---|---|
+| 2M DAU × günde ~8 görüntüleme | 16.000.000 istek/gün |
+| Ortalama yük | ~185 RPS |
+| Tepe saat (3× çarpan) | ~556 RPS |
+| Ölçülen tek instance | ~117 RPS |
+| **Gereken instance sayısı** | **~5** |
+
+Bu bir darboğaz değil, **kapasite planıdır.** Mimari stateless olduğu için — hiçbir sıralama durumu process belleğinde tutulmaz — instance sayısı doğrudan çoğaltılabilir; sticky session veya oturum paylaşımı gerekmez.
+
+Ayrıca ölçüm Render'ın **ücretsiz katmanında** (0.1 CPU) yapılmıştır. Aynı kod 8 çekirdekli bir makinede **292 RPS** üretir: yani tek instance sınırı donanımdan gelir, koddan değil.
+
+### Ölçümü tekrarlamak
+
+```bash
+./perf/run-benchmark.sh                 # canlıya karşı yük testi
+.perfvenv/bin/python perf/plot.py       # grafikleri üret
+```
+
+---
+
 ## Ödül Havuzu ve Haftalık Dağıtım
 
 Her **pozitif** skor artışının **%2'si** sezonun ödül havuzuna aktarılır. Katkı, skor artışıyla aynı Redis pipeline'ında gider — ayrı bir gidiş-dönüş maliyeti yoktur.
@@ -556,6 +634,11 @@ Bu depo yalnızca backend'i barındırır; kaynak kod ayrı bir alt klasöre gö
 ├── prisma/
 │   ├── schema.prisma        # PostgreSQL şeması
 │   └── seed.ts              # Örnek veri üreticisi (üç depoya birden yazar)
+├── perf/                    # Yük testi + grafik üretimi
+│   ├── run-benchmark.sh     # autocannon senaryoları (canlıya karşı)
+│   ├── plot.py              # matplotlib grafikleri
+│   ├── results/             # ham ölçüm çıktıları (JSON)
+│   └── charts/              # README'ye gömülen PNG'ler
 ├── scripts/
 │   └── issue-token.js       # CLI'dan JWT üretici (HTTP alternatifi: /api/auth/identify)
 └── src/

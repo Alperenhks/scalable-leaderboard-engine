@@ -1,0 +1,12 @@
+{
+  "note": "Chrome DevTools Network — canli frontend (Vercel) -> canli backend (Render). Tek kullanicinin acilis ekraninda attigi istekler; altisi da paralel gider.",
+  "source": "DevTools Network paneli, throttling yok",
+  "requests": [
+    { "endpoint": "leaderboard?limit=100", "ms": 74, "kb": 3.1, "status": 200 },
+    { "endpoint": "around",                "ms": 76, "kb": 3.2, "status": 200 },
+    { "endpoint": "projection",            "ms": 74, "kb": 2.1, "status": 200 },
+    { "endpoint": "rewards",               "ms": 72, "kb": 0.3, "status": 200 },
+    { "endpoint": "season",                "ms": 70, "kb": 0.5, "status": 200 },
+    { "endpoint": "me",                    "ms": 69, "kb": 0.4, "status": 200 }
+  ]
+}

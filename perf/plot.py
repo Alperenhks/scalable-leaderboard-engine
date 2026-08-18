@@ -232,11 +232,60 @@ def chart_capacity():
     return True
 
 
+# ------------------------------------------- 5) Gerçek tarayıcı ölçümü
+def chart_browser():
+    """
+    Asıl önemli grafik: tek kullanıcının gerçek deneyimi.
+
+    Yük testleri sunucunun TAVANINI ölçer (50-100 eşzamanlı bağlantı altında
+    kuyruk oluşur ve gecikme şişer). Oysa case'in sorusu "oyuncu ekranı
+    açtığında ne kadar bekliyor?" — cevabı burada.
+    """
+    path = RESULTS / "browser-timings.json"
+    if not path.exists():
+        return False
+    data = json.loads(path.read_text())
+    reqs = data["requests"]
+
+    labels = [r["endpoint"].replace("?limit=100", "\n(ilk 100)") for r in reqs]
+    times = [r["ms"] for r in reqs]
+
+    fig, ax = plt.subplots(figsize=(9, 4.4))
+    bars = ax.barh(labels[::-1], times[::-1], color=GOOD, height=0.6)
+    for b, v in zip(bars, times[::-1]):
+        ax.text(v + 1.5, b.get_y() + b.get_height() / 2, f"{v} ms",
+                va="center", fontsize=9, fontweight="bold")
+
+    slowest = max(times)
+    ax.axvline(slowest, color=WARN, linestyle="--", linewidth=1.5, alpha=0.8)
+    # Etiket alt başlık olarak: başlıkla da, çubuklarla da çakışmaz.
+    ax.set_title(
+        f"Altı istek paralel gider — sayfa {slowest} ms'de hazır",
+        fontsize=10, color=WARN, style="italic", pad=8, loc="center")
+
+    ax.set_xlabel("Yanıt süresi (ms)")
+    ax.set_xlim(0, slowest * 1.3)
+    ax.margins(y=0.12)
+    ax.grid(alpha=0.25, axis="x", linestyle="--")
+    fig.suptitle("Gerçek kullanıcı deneyimi — tarayıcıdan canlı API'ye",
+                 fontsize=12, fontweight="bold", y=1.02)
+
+    fig.text(0.5, -0.04,
+             "Chrome DevTools · Vercel (frontend) → Render (backend) · throttling yok",
+             ha="center", fontsize=8.5, style="italic", color=INK)
+
+    fig.tight_layout()
+    fig.savefig(CHARTS / "browser.png", bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
 def main():
     if not RESULTS.exists() or not any(RESULTS.glob("*.json")):
         bail("perf/results boş — önce ./perf/run-benchmark.sh çalıştırın")
 
     made = {
+        "browser.png": chart_browser(),
         "scaling.png": chart_scaling(),
         "endpoints.png": chart_endpoints(),
         "page-size.png": chart_page_size(),

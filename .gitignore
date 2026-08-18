@@ -157,3 +157,6 @@ skills-lock.json
 # Prisma tarafından üretilen client (npx prisma generate ile yeniden oluşturulur)
 /generated/prisma
 
+
+# Performans olcum sanal ortami (matplotlib)
+.perfvenv/
