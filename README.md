@@ -42,11 +42,32 @@ Hiçbir servis yerel makineye bağlı değildir; üç veri deposu da yönetilen 
 
 Bağlantı bilgilerinin hiçbiri koda gömülü değildir; tümü `.env` üzerinden okunur ve açılışta Joi ile doğrulanır.
 
-### Soğuk başlangıç
+### Soğuk başlangıç ve iki katmanlı çözüm
 
-Render'ın ücretsiz planı 15 dakika istek almayan servisi uykuya alır ve uyanma ~50 saniye sürer. Bu bir uygulama sorunu değil, planın davranışıdır — servis uyanıkken ölçülen yanıt süresi 75-80 ms'dir.
+Render'ın ücretsiz planı 15 dakika istek almayan servisi uykuya alır; uyanma ~50 saniye sürer. Bu bir uygulama sorunu değil, planın davranışıdır — servis uyanıkken ölçülen yanıt süresi 75-80 ms'dir. Ancak projeyi ilk kez açan biri için **ilk izlenim tam olarak o 50 saniyedir**, dolayısıyla teknik olarak açıklanabilir olması deneyimi düzeltmez.
 
-Servis, 5 dakikada bir sağlık ucuna istek atan bir zamanlayıcıyla (cron-job.org, yedeği `.github/workflows/keep-alive.yml`) sürekli uyanık tutulur. Ping `/` ucuna gider; hiçbir veri deposuna dokunmaz.
+Çözüm iki katmanlıdır ve bu kurgu ölçüm sonucu ortaya çıktı:
+
+| Katman | Araç | Aralık | Rolü |
+| --- | --- | --- | --- |
+| **Birincil** | [cron-job.org](https://cron-job.org) | 5 dk | Garantili tetikleme |
+| **Yedek** | GitHub Actions — [`keep-alive.yml`](.github/workflows/keep-alive.yml) | `*/5` | Birincil durursa devreye girer |
+
+İlk kurulumda yalnızca GitHub Actions kullanılmış ve `*/10` tanımlanmıştı. Tek bir 16 dakikalık testle "çalışıyor" sanıldı; ertesi gün servisin yine uyuduğu görüldü. Sebep, `schedule` tetikleyicisinin **zamanlama garantisi vermemesiydi** — gerçek aralıklar 19-32 dakika arasında değişiyordu:
+
+```
+#2 22:57   #3 23:16 (+19)   #4 23:41 (+25)   #5 00:00 (+19)   #6 00:32 (+32)
+```
+
+15 dakikalık eşik düzenli olarak aşıldığı için servis uyumaya devam ediyordu. Birincil ping bu yüzden tetiklemeyi garanti eden harici bir zamanlayıcıya taşındı; Actions ikinci savunma hattı olarak bırakıldı.
+
+| Karar | Gerekçe |
+| --- | --- |
+| **5 dakika** aralık | 15 dakikalık eşiğe üç katlı pay bırakır; bir tetikleme kaçsa bile sonraki pencereye düşer. |
+| **`/` ucu** | Hiçbir veri deposuna dokunmaz. `/api/leaderboard` pinglemek Redis ve Postgres'te günde 288 gereksiz tur demek olurdu. |
+| **Kota güvenli** | Render ayda 750 saat verir, bir ay en fazla 744 saattir — servis kesintisiz uyanık dursa bile limit aşılmaz. |
+
+Doğrulandı: 20 dakika hiç istek atılmadan beklendi, ardından servis **304 ms**'de yanıt verdi (uyumuş olsaydı ~50 sn). Ücretli plana geçildiğinde bu katman gereksizleşir ve **kodda hiçbir değişiklik gerekmez**.
 
 ---
 
@@ -98,7 +119,7 @@ docker compose up -d        # Postgres + Redis + Mongo (healthcheck'li)
 cp .env.example .env        # doldurun — aşağıdaki yerel değerler compose ile uyumlu
 npm install
 npx prisma db push          # şemayı uygula
-npm run seed                # 5.000 oyuncu (~30 sn)
+npm run seed                # 20.000 oyuncu
 npm run start:dev           # http://localhost:8080
 ```
 
@@ -114,7 +135,7 @@ PORT=8080
 
 Hiçbir bağlantı bilgisi koda gömülü değildir; hepsi `process.env`'den okunur ve açılışta Joi ile doğrulanır — eksik bir değişken varsa sunucu anlaşılır bir hatayla durur, ilk istekte çökmez.
 
-**Seed** üç veri deposuna birden yazar ve veri bilinçli olarak gerçekçidir: skor dağılımı üsteldir (düz rastgele değil), oyuncuların %1'i sıralama dışı bırakılır (`rank: null` senaryosu için) ve rastgelelik deterministiktir — aynı komut her çalıştığında aynı tabloyu üretir. `--players 50000` ile ölçek büyütülür, `--reset` mevcut veriyi temizler.
+**Seed** üç veri deposuna birden yazar ve veri bilinçli olarak gerçekçidir: skor dağılımı üsteldir (düz rastgele değil), oyuncuların %1'i sıralama dışı bırakılır (`rank: null` senaryosu için) ve rastgelelik deterministiktir — aynı komut her çalıştığında aynı tabloyu üretir. `--players 100000` ile ölçek büyütülür, `--reset` mevcut veriyi temizler.
 
 <details>
 <summary><b>Üretim notları</b> — Neon pooler ve migration</summary>
@@ -256,6 +277,39 @@ Verim ~117 RPS'te doygunluğa ulaşır ve gecikme oradan sonra lineer artar — 
 |---|---|---|
 | `leaderboard?limit=100` | 66 RPS | **117 RPS** (+77%) |
 | `around` | 77 RPS | **153 RPS** (+99%) |
+
+### Ölçek: sıralama oyuncu sayısından etkileniyor mu?
+
+Bu mimarinin temel iddiası, sıralama maliyetinin **oyuncu sayısıyla değil sayfa boyutuyla** orantılı olmasıdır. İddia olarak bırakılmadı — ZSET kademeli büyütülüp her adımda aynı sorgular çalıştırıldı:
+
+| Üye sayısı | `ZREVRANK` | İlk 100 | 3 üst + 2 alt | Derin sayfa |
+|---|---|---|---|---|
+| 1.000 | 51,8 ms | 54,1 ms | 103,2 ms | 53,6 ms |
+| 10.000 | 52,3 ms | 53,5 ms | 104,9 ms | 52,8 ms |
+| 100.000 | 53,2 ms | 53,3 ms | 103,2 ms | 53,4 ms |
+| 500.000 | 51,8 ms | 53,5 ms | 104,3 ms | 53,2 ms |
+| **1.000.000** | **52,0 ms** | **52,3 ms** | **103,9 ms** | 117,1 ms |
+
+**Bin kat büyümede süre değişmiyor.** Ölçülen sürenin neredeyse tamamı ağ turudur (~52 ms); sıralamanın kendi maliyeti ölçüm hassasiyetinin altında kalıyor. "3 üst + 2 alt" iki ağ turu gerektirdiği için iki katı. "Derin sayfa" sütunu, klasik `ORDER BY ... OFFSET` yaklaşımının çöktüğü yeri ölçer: tablonun sonundan 100 kayıt çekmek, başından çekmekle aynı sürüyor.
+
+Ölçüm tekrarlanabilir:
+
+```bash
+node perf/scale-test.mjs            # 2.000.000 üyeye kadar dener
+node perf/scale-test.mjs 500000     # daha küçük ölçek
+```
+
+> Test 1.360.000 üyede Upstash'in **ücretsiz plan** sınırına (anahtar başına 100 MB) takılır. Bu bir kod sınırı değil, barındırma planı sınırıdır — script bunu ayırt edip raporlar, çökmez.
+
+#### Örnek veri neden 20.000 oyuncu?
+
+İki ayrı soru: yukarıdaki tablo **sistemin ölçekte çalıştığını** kanıtlar, seed ise **case senaryolarının görünmesini** sağlar.
+
+20.000 oyuncu ikincisi için yeterli — ilk 100 tablosu dolu, ilk 100 dışındaki oyuncunun "3 üst / 2 alt" penceresi çalışıyor, sırasız oyuncular (`rank: null`) var, 20 ülke tablosu dolu. Daha fazla satır bu senaryolara yeni bir şey katmaz, yalnızca kurulumu uzatır. Ölçek yine de büyütülebilir:
+
+```bash
+npm run seed -- --players 100000
+```
 
 ### 2M DAU için ne gerekir?
 

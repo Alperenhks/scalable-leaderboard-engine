@@ -1,14 +1,16 @@
 /**
  * Örnek veri üreticisi — jürinin sistemi gerçek koşullarda test edebilmesi için.
  *
- *   npm run seed              # 5.000 oyuncu (varsayılan, ~30 sn)
- *   npm run seed -- --players 50000
+ *   npm run seed              # 20.000 oyuncu (varsayılan)
+ *   npm run seed -- --players 100000
  *   npm run seed -- --reset   # önce mevcut örnek veriyi temizler
  *
- * Neden bu ölçek: case 2M DAU'dan bahsediyor ama jürinin projeyi klonlayıp
- * beklemesi gereken süre makul kalmalı. 5.000 oyuncu "3 üst / 2 alt"
- * penceresinin ilk 100 dışında çalıştığını göstermeye fazlasıyla yeter;
- * --players ile ölçek istendiği kadar büyütülebilir.
+ * Neden bu ölçek: sıralamanın oyuncu sayısından etkilenmediği ayrıca
+ * ölçüldü (`perf/scale-test.mjs`, 1M üyeye kadar). Seed'in işi ölçek
+ * kanıtlamak değil, case'in tüm senaryolarını görünür kılmak: ilk 100
+ * tablosu, ilk 100 dışındaki oyuncunun penceresi, sırasız oyuncu ve ülke
+ * tabloları. 20.000 oyuncu bunların hepsini rahatça taşır ve kurulumu
+ * dakikalarca uzatmaz.
  *
  * Üretilen veri üç deponun HEPSİNE yazılır ki sistem uçtan uca tutarlı olsun:
  *   Postgres → oyuncu kimlikleri (ad, ülke)
@@ -33,7 +35,7 @@ const flag = (name: string, fallback: number): number => {
   return i >= 0 && args[i + 1] ? Number(args[i + 1]) : fallback;
 };
 
-const PLAYER_COUNT = flag('players', 5_000);
+const PLAYER_COUNT = flag('players', 20_000);
 const SHOULD_RESET = args.includes('--reset');
 
 /**
