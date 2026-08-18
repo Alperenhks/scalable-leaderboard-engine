@@ -15,7 +15,7 @@ import { AppModule } from './../src/app.module';
  * Prefix kurulumu main.ts ile birebir aynı tutulur: kök yol hariç tutulduğu
  * için sağlık kontrolü / üzerinde kalır, iş uçları /api altına iner.
  */
-describe('AppController (e2e)', () => {
+describe('Uygulama (e2e)', () => {
   let app: NestFastifyApplication;
 
   beforeAll(async () => {
@@ -39,11 +39,34 @@ describe('AppController (e2e)', () => {
     await app.getHttpAdapter().getInstance().ready();
   });
 
-  it('kök yol sağlık kontrolü olarak prefix dışında kalır', async () => {
+  it('kök yol liveness probe olarak prefix dışında kalır', async () => {
     const res = await app.inject({ method: 'GET', url: '/' });
 
     expect(res.statusCode).toBe(200);
-    expect(res.payload).toBe('Hello World!');
+    const body = JSON.parse(res.payload) as {
+      status: string;
+      uptimeSeconds: number;
+    };
+    expect(body.status).toBe('ok');
+    expect(body.uptimeSeconds).toBeGreaterThanOrEqual(0);
+  });
+
+  it('readiness probe üç veri deposunu da raporlar', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/health' });
+
+    // Testler canlı depolara bağlı çalışır; hepsi ayaktaysa 200, biri
+    // düşükse 503 — ikisi de geçerli yanıttır, önemli olan raporun biçimi.
+    expect([200, 503]).toContain(res.statusCode);
+
+    const body = JSON.parse(res.payload) as {
+      status: string;
+      dependencies: Record<string, { status: string; latencyMs: number }>;
+    };
+    expect(['ok', 'degraded']).toContain(body.status);
+    for (const name of ['postgres', 'redis', 'mongo']) {
+      expect(['up', 'down']).toContain(body.dependencies[name].status);
+      expect(body.dependencies[name].latencyMs).toBeGreaterThanOrEqual(0);
+    }
   });
 
   it('liderlik tablosu /api altında yayınlanır', async () => {

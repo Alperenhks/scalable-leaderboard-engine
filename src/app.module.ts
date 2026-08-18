@@ -2,8 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ScheduleModule } from '@nestjs/schedule';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { AuthModule } from './auth/auth.module';
@@ -39,13 +38,12 @@ import { envValidationSchema } from './config/env.validation';
     ScheduleModule.forRoot(),
     PrismaModule,
     RedisModule,
+    HealthModule,
     AuthModule,
     LeaderboardModule,
     RewardsModule,
     IdentityModule,
     PlayersModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
 })
 export class AppModule {}

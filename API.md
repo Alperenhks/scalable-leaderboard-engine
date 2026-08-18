@@ -7,6 +7,52 @@ Bu doküman frontend'in ihtiyaç duyduğu her şeyi içerir: uçlar, tipler, ak�
 
 ---
 
+## 0. Sağlık uçları
+
+İki ayrı soru ayrı uçlarla yanıtlanır; karıştırılmaları pahalıya mal olur.
+
+### `GET /` — liveness (süreç ayakta mı?)
+
+Bağımlılıklara **bakmaz**, sıfır I/O. Global `/api` önekinden muaftır.
+
+```json
+{ "status": "ok", "uptimeSeconds": 1462 }
+```
+
+Bakmamasının sebebi: Postgres'in geçici bir kesintisi tüm filoyu yeniden
+başlatırdı — oysa süreçlerde sorun yoktur ve yeniden başlatmak kesintiyi
+yalnızca uzatır.
+
+### `GET /api/health` — readiness (istek alabilir durumda mı?)
+
+Üç veri deposunu da **paralel** yoklar; her yoklamanın 2 sn zaman aşımı vardır,
+böylece yanıt vermeyen bir depo ucu asılı bırakmaz.
+
+```json
+{
+  "status": "ok",
+  "uptimeSeconds": 1462,
+  "timestamp": "2026-08-18T20:24:26.229Z",
+  "dependencies": {
+    "postgres": { "status": "up", "latencyMs": 636 },
+    "redis":    { "status": "up", "latencyMs": 57 },
+    "mongo":    { "status": "up", "latencyMs": 74 }
+  }
+}
+```
+
+| Durum | HTTP | `status` |
+| --- | --- | --- |
+| Üç depo da ayakta | `200` | `ok` |
+| En az biri erişilemez | `503` | `degraded` |
+
+Düşük bağımlılık raporda `{"status":"down","error":"..."}` olarak görünür;
+diğerleri normal raporlanmaya devam eder — rapor sorunu **izole eder**.
+`503`, yük dengeleyicinin instance'ı havuzdan çıkarması için gereken makine
+tarafından okunabilir sinyaldir.
+
+---
+
 ## 1. Oyuncu kimliği
 
 Case *"players should clearly see **their own** ranking"* diyor: `/leaderboard/around` gibi uçlar "**benim** sıram" sorusunu yanıtladığı için sunucunun isteği atanın kim olduğunu bilmesi gerekir.
@@ -24,7 +70,7 @@ Gövde **tamamen opsiyoneldir** — boş `{}` gönderirsen rastgele bir oyuncu d
 {}                                    // rastgele oyuncu
 { "username": "demo_neon_pilot_5" }   // belirli oyuncu
 { "mode": "outside" }                 // senaryoya göre oyuncu
-{ "mode": "top", "role": "admin" }    // admin yetkili token
+{ "adminSecret": "<sır>" }            // admin yetkili token (ADMIN_SECRET ile)
 ```
 
 **`mode` değerleri — jürinin tek tıkla her senaryoyu denemesi için:**
@@ -330,7 +376,15 @@ Dağıtımı elle tetikler. `seasonId` verilmezse bir önceki hafta.
   "distributedAmount": "94018764.62", "skippedUnknownUsers": 0, "seasonReset": true }
 ```
 
-Admin token için: `POST /api/auth/identify { "mode": "top", "role": "admin" }`
+Admin token için: `POST /api/auth/identify { "adminSecret": "<sır>" }`
+
+Sır sunucudaki `ADMIN_SECRET` ortam değişkeninden okunur ve sabit zamanlı
+karşılaştırmayla doğrulanır. **Değişken tanımlı değilse admin token hiç
+üretilmez** ve bu uç kimseye açık olmaz — yapılandırılmamış bir ortamda ucun
+kapalı kalması, yanlışlıkla açık kalmasına yeğdir.
+
+Haftalık dağıtım zaten cron ile **otomatik** çalışır (Pazartesi 00:05 UTC);
+bu uç yalnızca dağıtımın elle gösterilebilmesi için vardır.
 
 | Durum | Yanıt |
 | --- | --- |
