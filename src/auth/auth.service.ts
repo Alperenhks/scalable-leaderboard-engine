@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { timingSafeEqual } from 'node:crypto';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { LeaderboardService } from '../leaderboard/leaderboard.service';
 import { Role } from './jwt.types';
@@ -39,6 +41,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly prisma: PrismaService,
     private readonly leaderboard: LeaderboardService,
+    private readonly config: ConfigService,
   ) {}
 
   async identify(
@@ -51,7 +54,9 @@ export class AuthService {
       ? await this.findByUsername(dto.username)
       : await this.pickByMode(dto.mode ?? 'random', seasonId);
 
-    const roles: Role[] = dto.role === 'admin' ? [Role.ADMIN] : [Role.PLAYER];
+    const roles: Role[] = this.isAdminRequest(dto.adminSecret)
+      ? [Role.ADMIN]
+      : [Role.PLAYER];
 
     const { rank, score } = await this.leaderboard.getUserRank(
       user.id,
@@ -69,6 +74,28 @@ export class AuthService {
       score,
       seasonId,
     };
+  }
+
+  /**
+   * Admin token'ı yalnızca doğru sır sunulduğunda verilir.
+   *
+   * `ADMIN_SECRET` tanımlı değilse admin token HİÇ üretilmez — yapılandırma
+   * eksikse ucun kapalı kalması, yanlışlıkla açık kalmasına yeğdir.
+   *
+   * Karşılaştırma `timingSafeEqual` ile sabit zamanlıdır: `===` ilk farklı
+   * karakterde döner ve yanıt süresi üzerinden sır karakter karakter tahmin
+   * edilebilir. Uzunluklar farklıysa `timingSafeEqual` hata fırlattığı için
+   * önce uzunluk kontrol edilir; bu bilgi zaten sızdırılabilir sayılır.
+   */
+  private isAdminRequest(provided?: string): boolean {
+    const expected = this.config.get<string>('ADMIN_SECRET');
+    if (!expected || !provided) return false;
+
+    const a = Buffer.from(provided);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length) return false;
+
+    return timingSafeEqual(a, b);
   }
 
   private async findByUsername(

@@ -32,15 +32,24 @@ export class IdentifyDto {
   mode?: 'top' | 'mid' | 'outside' | 'unranked' | 'random';
 
   /**
-   * Admin yetkili token isteniyorsa. Ödül dağıtımı ucunu denemek için gerekli.
+   * Admin yetkili token istemek için paylaşılan sır.
    *
-   * Demo ortamında serbest bırakılması bilinçlidir: jüri dağıtımı canlı
-   * görebilmelidir. Gerçek bir dağıtımda bu alan kaldırılmalı ve admin
-   * token'ı yalnızca sunucu tarafında üretilmelidir (README'de not düşüldü).
+   * Daha önce burada serbest bir `role: "admin"` alanı vardı ve isteyen
+   * herkes ödül dağıtımını tetikleyebilecek bir token alabiliyordu — canlı
+   * dağıtımda para dağıtan uç fiilen açıktı.
+   *
+   * Sır `ADMIN_SECRET` ortam değişkeninden okunur ve sabit zamanlı
+   * karşılaştırmayla doğrulanır. Değişken tanımlı değilse admin token'ı
+   * HİÇ üretilmez: yapılandırılmamış bir ortamda ucun kapalı kalması,
+   * yanlışlıkla açık kalmasına yeğdir.
+   *
+   * Bu bir login akışı değildir; case zaten kimlik doğrulama istemiyor.
+   * Haftalık dağıtım cron ile otomatik çalışır (`rewards.scheduler.ts`) —
+   * bu uç yalnızca dağıtımın elle gösterilebilmesi için vardır.
    */
   @IsOptional()
-  @IsIn(['player', 'admin'])
-  role?: 'player' | 'admin';
+  @IsString()
+  adminSecret?: string;
 
   /** Sezon bağlamı — `mode` ile oyuncu seçilirken hangi tabloya bakılacağı. */
   @IsOptional()
