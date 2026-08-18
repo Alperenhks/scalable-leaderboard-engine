@@ -2,7 +2,10 @@
 
 Bu doküman frontend'in ihtiyaç duyduğu her şeyi içerir: uçlar, tipler, akışlar ve tasarım notları. Backend tarafında bu sözleşmenin dışında bir şey yoktur.
 
-**Base URL:** `https://<backend-domain>/api` · Yerelde `http://localhost:8080/api`
+**Base URL (canlı):** `https://scalable-leaderboard-engine.onrender.com/api`
+**Yerel:** `http://localhost:8080/api`
+
+> **UI tasarımı ve ekran akışları için:** [UI_GUIDE.md](UI_GUIDE.md)
 
 ---
 
@@ -94,7 +97,7 @@ Kimlik **gerektirmez** — herkese açık.
 {
   "seasonId": "2026-W34", "total": 4950, "limit": 100, "offset": 0,
   "entries": [
-    { "rank": 1, "userId": "cmsx...", "username": "demo_neon_pilot_5", "score": 4526619 }
+    { "rank": 1, "userId": "cmsx...", "username": "demo_neon_pilot_5", "score": 4526619, "country": "TR" }
   ]
 }
 ```
@@ -113,12 +116,12 @@ Oyuncu ilk 100'ün dışındaysa bile kaybolmaz.
   "seasonId": "2026-W34", "userId": "cmsx...", "rank": 121, "score": 3696088,
   "total": 4950, "inTopWindow": false,
   "entries": [
-    { "rank": 118, "username": "demo_royal_falcon_173",  "score": 3706383, "isCurrentUser": false },
-    { "rank": 119, "username": "demo_shadow_phoenix_84", "score": 3703823, "isCurrentUser": false },
-    { "rank": 120, "username": "demo_lucky_pilot_289",   "score": 3702654, "isCurrentUser": false },
-    { "rank": 121, "username": "demo_turbo_falcon_220",  "score": 3696088, "isCurrentUser": true  },
-    { "rank": 122, "username": "demo_crimson_wolf_311",  "score": 3694102, "isCurrentUser": false },
-    { "rank": 123, "username": "demo_blazing_hawk_243",  "score": 3691840, "isCurrentUser": false }
+    { "rank": 118, "username": "demo_royal_falcon_173",  "score": 3702117, "country": "DE", "isCurrentUser": false },
+    { "rank": 119, "username": "demo_shadow_phoenix_84", "score": 3701803, "country": "BR", "isCurrentUser": false },
+    { "rank": 120, "username": "demo_neon_ranger_223",   "score": 3696352, "country": "US", "isCurrentUser": false },
+    { "rank": 121, "username": "demo_turbo_falcon_220",  "score": 3696088, "country": "RU", "isCurrentUser": true  },
+    { "rank": 122, "username": "demo_lucky_pilot_289",   "score": 3695344, "country": "JP", "isCurrentUser": false },
+    { "rank": 123, "username": "demo_blazing_hawk_243",  "score": 3694181, "country": "TR", "isCurrentUser": false }
   ]
 }
 ```

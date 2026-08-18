@@ -10,6 +10,8 @@ export interface LeaderboardEntry {
   userId: string;
   username: string;
   score: number;
+  /** ISO 3166-1 alpha-2; ülke bazlı karşılaştırma ve bayrak gösterimi için. */
+  country: string | null;
 }
 
 export interface LeaderboardPage {
@@ -445,18 +447,20 @@ export class LeaderboardService {
     return ranked;
   }
 
-  /** Redis sırasını koruyarak görünen adları ekler. */
+  /** Redis sırasını koruyarak görünen ad ve ülkeyi ekler. */
   private async enrich(
     ranked: Array<{ rank: number; userId: string; score: number }>,
   ): Promise<LeaderboardEntry[]> {
-    const usernameById = await this.resolveUsernames(
-      ranked.map((r) => r.userId),
-    );
+    const profileById = await this.resolveProfiles(ranked.map((r) => r.userId));
 
-    return ranked.map((r) => ({
-      ...r,
-      username: usernameById.get(r.userId) ?? UNKNOWN_USERNAME,
-    }));
+    return ranked.map((r) => {
+      const profile = profileById.get(r.userId);
+      return {
+        ...r,
+        username: profile?.username ?? UNKNOWN_USERNAME,
+        country: profile?.country ?? null,
+      };
+    });
   }
 
   /**
@@ -466,16 +470,20 @@ export class LeaderboardService {
    * Postgres'te bulunamayan kullanıcı listeden DÜŞÜRÜLMEZ; düşürmek sıralamada
    * boşluk yaratır ve sayfalamayı bozardı.
    */
-  private async resolveUsernames(
+  private async resolveProfiles(
     userIds: string[],
-  ): Promise<Map<string, string>> {
+  ): Promise<Map<string, { username: string; country: string | null }>> {
     if (userIds.length === 0) return new Map();
 
+    // country da çekilir: ülke bayrağı için ikinci bir sorgu atmak, sayfa
+    // başına tek arama disiplinini bozardı — aynı satırda zaten geliyor.
     const users = await this.prisma.user.findMany({
       where: { id: { in: userIds } },
-      select: { id: true, username: true },
+      select: { id: true, username: true, country: true },
     });
 
-    return new Map(users.map((u) => [u.id, u.username]));
+    return new Map(
+      users.map((u) => [u.id, { username: u.username, country: u.country }]),
+    );
   }
 }

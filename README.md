@@ -4,7 +4,9 @@
 
 > **Durum:** Skor gönderimi, canlı liderlik tablosu, JWT kimlik doğrulaması, "3 üst / 2 alt" penceresi, haftalık ödül dağıtımı, cüzdan/ödül geçmişi ve sezon geri sayımı çalışır durumda.
 >
-> **Frontend geliştiricisi:** Tam API sözleşmesi için **[API.md](API.md)** — uçlar, tipler, akışlar ve kırılmaz kurallar orada.
+> **Canlı API:** https://scalable-leaderboard-engine.onrender.com/api
+>
+> **Frontend geliştiricisi:** Tam API sözleşmesi **[API.md](API.md)**, ekran tasarımı ve akışlar **[UI_GUIDE.md](UI_GUIDE.md)**.
 
 ---
 
@@ -525,6 +527,7 @@ Bu depo yalnızca backend'i barındırır; kaynak kod ayrı bir alt klasöre gö
 ├── .env.example
 ├── prisma.config.ts         # DATABASE_URL'i process.env'den okur
 ├── API.md                   # Frontend için tam API sözleşmesi
+├── UI_GUIDE.md              # Liderlik tablosu ekranı tasarım rehberi
 ├── prisma/
 │   ├── schema.prisma        # PostgreSQL şeması
 │   └── seed.ts              # Örnek veri üreticisi (üç depoya birden yazar)
