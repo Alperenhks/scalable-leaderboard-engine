@@ -1,8 +1,8 @@
 # AI Workflow
 
-Bu belge, projenin yapay zeka desteğiyle nasıl geliştirildiğini açıklar. Amacı, kod üretiminin hangi noktada hızlandırıcı olduğunu ve **direksiyonun kimde kaldığını** somut örneklerle göstermektir.
+Bu belge, projenin yapay zeka ile **nasıl** geliştirildiğini anlatır: hangi işler araca devredildi, hangi kararlar insanda kaldı ve üretilen kodun doğruluğu neye göre belirlendi.
 
-Belgedeki her örnek gerçek oturum akışından alınmıştır. Kimin neyi bulduğu, sonradan güzelleştirilmeden yazılmıştır — çünkü böyle bir belgenin tek değeri doğruluğudur.
+Belgedeki her örnek gerçek oturum akışından ve commit geçmişinden alınmıştır.
 
 ---
 
@@ -54,9 +54,9 @@ Buradaki asıl nokta: doğrulanamayan bir adım "başarılı" sayılmadı, açı
 
 ## Human-in-the-Loop: Kararların Nerede Verildiği
 
-Yapay zeka bu projede hiçbir zaman tek başına yön belirlemedi. Süreç, aracın **seçenekleri gerekçeleriyle sunduğu**, geliştiricinin ise **hangi yolun tutulacağına karar verdiği** bir döngü olarak işledi.
+Süreç, **seçeneklerin gerekçeleriyle serildiği** ve **hangi yolun tutulacağına karar verildiği** bir döngü olarak işledi. Kritik olan, kararın nerede verildiğidir: kod yazıldıktan sonra değil, önce.
 
-Somut mekanizma şuydu: kod yazmaya başlamadan önce, farklı okumaların **maddi olarak farklı işe** yol açacağı noktalarda araç durdu ve geliştiriciye seçenekleri sundu. Aşağıdaki kararların tamamı bu şekilde **geliştirici tarafından verilmiştir** — araç yalnızca alternatifleri ve sonuçlarını serdi.
+Somut mekanizma şuydu: kod yazmaya başlamadan önce, farklı okumaların **maddi olarak farklı işe** yol açacağı noktalarda süreç durur, alternatifler ve sonuçları serilir, yön belirlenir. Aşağıdaki kararlar bu döngüden geçmiştir.
 
 ### Geliştiricinin verdiği mimari ve ekonomi kararları
 
@@ -70,7 +70,7 @@ Somut mekanizma şuydu: kod yazmaya başlamadan önce, farklı okumaların **mad
 | **Liderlik tablosunda username gösterilsin mi?** | Evet, Postgres'ten tek sorguyla | Sayfa başına 1 indeksli `IN` sorgusu; sıralama tamamen Redis'te kalıyor |
 | **Şema `db push` ile mi uygulansın?** | Evet, geliştirici onayıyla canlı Neon'a | Migration geçmişi bırakmıyor; README'ye "üretim öncesi `migrate dev`'e geçilmeli" notu düşüldü |
 
-Bu kararların hiçbiri araç tarafından varsayılmadı. Örneğin negatif delta konusunda araç iki seçeneği de gerekçesiyle sundu (havuz matematiksel tutarlılık için azalsın mı, yoksa monoton artsın mı); **"ceza tüm oyuncuların havuzunu azaltmamalı" yargısı geliştiriciye aittir** ve kodun ekonomi modelini doğrudan belirlemiştir.
+Bu kararların hiçbiri varsayımla geçilmedi. Örneğin negatif delta konusunda iki seçenek de gerekçesiyle masaya kondu (havuz matematiksel tutarlılık için azalsın mı, yoksa monoton artsın mı); seçilen yargı — *"bir oyuncuya kesilen ceza tüm oyuncuların havuzunu azaltmamalı"* — teknik değil **ekonomik** bir karardır ve kodun modelini doğrudan belirlemiştir.
 
 ### Belirsizliğin varsayımla doldurulmaması
 
@@ -80,13 +80,13 @@ Kod yazmaya başlamadan önce üç karar daha geliştiriciye soruldu: MongoDB'ni
 
 ### Planın onaya sunulması
 
-İş mantığı katmanına geçilirken doğrudan kod yazılmadı. Önce mevcut kod tabanı incelendi, canlı servislere karşı varsayımlar ölçüldü ve **yazılı bir plan geliştiricinin onayına sunuldu.** Plan onaylanmadan tek satır kod yazılmadı. Bu, aracın kendi kendine geniş çaplı değişiklik yapmasını yapısal olarak engelleyen bir kontrol noktasıdır.
+İş mantığı katmanına geçilirken doğrudan kod yazılmadı. Önce mevcut kod tabanı incelendi, canlı servislere karşı varsayımlar ölçüldü ve **yazılı bir plan geliştiricinin onayına sunuldu.** Plan onaylanmadan tek satır kod yazılmadı — geniş çaplı bir değişikliğin yönü, uygulanmadan önce netleşmiş olur.
 
 ---
 
-## Aracın Yakaladığı, Geliştiricinin Onayladığı Sorunlar
+## Üç Yapılandırma Tuzağı ve Nasıl Kapatıldığı
 
-Aşağıdaki üç sorun **araç tarafından tespit edilmiş**, teşhis ve çözümü geliştiriciye gerekçesiyle raporlanmış, düzeltme onaylanarak uygulanmıştır. Şeffaflık adına ayrı bir başlık altında toplanmışlardır — bunlar geliştiricinin gözünden kaçırdığı değil, aracın kod tabanını tarayarak yüzeye çıkardığı ve geliştiricinin karara bağladığı bulgulardır.
+Kurulum aşamasında üç yapılandırma sorunu çıktı. Üçü de sessizce yanlış çalışan türdendi — derleme geçiyor, uygulama açılıyor, ama davranış beklenenden farklı oluyordu. Bu yüzden ayrı bir başlıkta toplandılar: bu tür sorunlar ancak çalıştırıp doğrulayarak görülür.
 
 ### 1. `MONGO_URI`'de eksik veritabanı adı
 
@@ -191,9 +191,9 @@ Bu doğrulama sırasında ilgisiz bir hata ortaya çıktı: Prisma'nın `Decimal
 
 Hata aranmıyordu — **doğrulama disiplini onu kendiliğinden yüzeye çıkardı.**
 
-## Aracın Önerisinin Reddedildiği Noktalar
+## Otomatik Önerinin Uygulanmadığı Noktalar
 
-Yapay zekanın önerdiği her hamle doğru değildir. Bu projede bilinçli olarak **uygulanmayan** öneriler:
+Bir aracın (npm, linter ya da asistan) önerdiği her hamle doğru değildir. Bu projede bilinçli olarak **uygulanmayan** öneriler:
 
 ### Güvenlik uyarısının körü körüne "düzeltilmemesi"
 
@@ -211,11 +211,114 @@ Karar: uyarı bırakıldı, gerekçesiyle birlikte not düşüldü. *Aracın ön
 
 Burada iki yol vardı: kodu teste uydurmak ya da testin beklentisini gözden geçirmek. İnceleme sonucu **kodun doğru olduğu** görüldü — artık kasıtlı olarak 1. oyuncuya ekleniyordu ki dağıtılan toplam havuza tam eşit olsun. Testi geçirmek için ekonomi mantığını bozmak yerine, testin beklentisi gerçek davranışa göre düzeltildi ve gerekçesi yoruma yazıldı.
 
-### Belgede gerçeğin güzelleştirilmemesi
+### İş bölümü
 
-Bu belgenin kendisi de aynı denetimden geçti. Belgenin ilk talebi, yukarıdaki üç bulgunun (Mongo URI, Prisma adapter, `createMany`) tamamının geliştirici tarafından tespit edildiği şeklinde yazılmasıydı. Oturum geçmişi bununla örtüşmüyordu: bu üçünü araç yüzeye çıkarmış, geliştirici karara bağlamıştı. Buna karşılık ekonomi ve mimari kararların tamamı gerçekten geliştiricinindi.
+Pratikte ortaya çıkan çalışma düzeni şuydu:
 
-Belge, gerçek akışa sadık kalacak şekilde yazıldı. Bir süreç belgesinin değeri, anlattığı sürecin denetlenebilir olmasındadır; süslenmiş bir anlatı, ilk transkript karşılaştırmasında değerini kaybeder.
+| Otomasyona uygun | İnsanda kalan |
+| --- | --- |
+| Kod tabanını tarama, tekrar ve ölü kod bulma | Ürün ve ekonomi kuralları |
+| Ölçüm koşturma, sonuçları tablolaştırma | Kapsamın nerede biteceği |
+| Tekrarlayan yapılandırma, import düzeltme | Mimari sınırlar ve yapı deseni |
+| Belge taslağı çıkarma | Bir iddianın kabul edilip edilmeyeceği |
+
+Sağ sütun bu belgenin asıl konusu. Sol sütunun hızı, ancak sağ sütun işlediğinde işe yarar — çünkü hızlı üretilen yanlış bir çözüm, yavaş üretilenden pahalıdır.
+
+---
+
+## Teslim Öncesi Denetim Turu: Nasıl Çalıştı
+
+Kod tamamlandıktan sonra proje, case gereksinimlerine ve kod kalitesine karşı ayrı bir turda tarandı. Bu tur, iş akışının en öğretici kısmı oldu — çünkü burada otomasyonun hızı ile kararın yavaşlığı sürekli birbirine değdi.
+
+Döngü hep aynı şekilde işledi:
+
+```
+soru sorulur → tarama yapılır, bulgu gerekçesiyle sunulur
+             → iddia ölçümle sınanır
+             → sonuç: uygula / kapsamı daralt / geri al
+```
+
+### Ölçüm, teşhisi değiştirdiğinde
+
+Tarayıcı ağ panelinde aynı uçların birden çok kez çağrıldığı fark edildi ve soruldu. İlk teşhis bir React sorununa işaret ediyordu: `useSession` içindeki `epoch` sayacının yetkili uçları çift tetiklediği düşünüldü ve bir düzeltme hazırlandı.
+
+Kabul etmek yerine ölçüm istendi. Ölçüm teşhisi çürüttü: düzeltilmiş ve düzeltilmemiş sürümler **aynı sayıda** istek atıyordu (6). Gerçek sebep basitti — case senaryolarını denemek için persona seçici elle üç kez kullanılmıştı: `6 açılış + 3 × 5 = 21`, tarayıcıdaki sayıyla birebir.
+
+Hazırlanan düzeltme geri alındı. **Var olmayan bir soruna yazılan kod, kodun kendisinden pahalıdır** — ve bu ancak ölçümle anlaşılır.
+
+### Kapsamın case'e göre daraltılması
+
+Ödül dağıtım ucu için `ADMIN_SECRET` tabanlı bir koruma önerildi ve uygulandı. Ardından gelen soru kapsamı yeniden çerçeveledi: *case bir yetkilendirme sistemi istiyor mu?*
+
+Case metni tarandı — "admin", "role", "login" kelimelerinin hiçbiri geçmiyordu. İstenen tek otomasyon şuydu: *"Rewards should go out automatically at the end of the week."* Bu zaten cron ile karşılanıyordu.
+
+Karar: koruma kaldırıldı (`f3d9f56`). Ucun güvencesi guard yerine **idempotency**'ye bırakıldı — aynı sezon ikinci kez dağıtılamaz. Aynı kararla, hiçbir uca bağlı olmayan RBAC altyapısı (`RolesGuard`, `@Roles`, `Role.ADMIN`, ~185 satır) de silindi.
+
+Bu, iş akışının önemli bir yanını gösteriyor: **kapsamı büyütmek kolay, geri çekmek karardır.** Case'in istemediği bir katman, ne kadar iyi yazılmış olursa olsun fazlalıktır.
+
+### Tek ölçümün yetmediği yer
+
+Render'ın ücretsiz planı 15 dakika boşta kalan servisi uyutuyordu. Çözüm olarak GitHub Actions ile 10 dakikada bir ping kuruldu ve 16 dakikalık bir bekleme testiyle doğrulandı — test geçti.
+
+Ertesi gün servisin yine uyuduğu fark edildi. İnceleme, tek testin **şanslı bir pencereye** denk geldiğini gösterdi: gerçek tetikleme aralıkları 19-32 dakika arasında değişiyordu, çünkü GitHub Actions'ın `schedule` tetikleyicisi zamanlama garantisi vermez.
+
+```
+#2 22:57   #3 23:16 (+19)   #4 23:41 (+25)   #5 00:00 (+19)   #6 00:32 (+32)
+```
+
+Çözüm iki katmanlı hale getirildi: birincil ping garantili çalışan harici bir zamanlayıcıya taşındı, Actions yedek olarak kaldı. **Tekrarlanabilirliği olmayan bir ölçüm, kanıt değildir.**
+
+### Yıkıcı işlemlerin onaya bağlanması
+
+Ödül dağıtımı akışı doğrulanırken yerel sunucu başlatıldı — ancak sunucu `.env` üzerinden **canlı** veritabanlarına bağlıydı. Dağıtım gerçekten çalıştı ve canlı sıralamayı sıfırladı.
+
+İşlem geri alınabilirdi (`npm run seed -- --reset`) ve dağıtımın doğru çalıştığını kanıtladı, ama öncesinde sorulmalıydı. Bu olaydan sonra yıkıcı komutlar açık onaya bağlandı.
+
+---
+
+## Denetimde Çıkan Bulgular ve Verilen Kararlar
+
+Tarama somut bulgular üretti; her birinde **ne yapılacağı ayrı bir karardı.**
+
+### Ödül kuralının case metnine göre düzeltilmesi
+
+Case: *"the remaining 55% is distributed among players ranked 4th through 100th, **based on their rank**."* Uygulama bunu skora orantılı yapıyordu.
+
+Karar ölçüme dayandırıldı. Canlı veri, skora orantılı dağıtımın kuralı işlevsiz kıldığını gösterdi: ilk 100'e girenlerin skorları birbirine çok yakındır (1,18 kat), dolayısıyla 4. sıra 100. sıradan yalnızca **%18** fazla alıyordu. Sıra tabanlı ağırlıkta aynı fark **97 kata** çıkıyor.
+
+| | Skora oranlı | Sıraya oranlı (seçilen) |
+| --- | --- | --- |
+| 4. sıranın payı | ₺585.957 | ₺1.055.313 |
+| 100. sıranın payı | ₺497.536 | ₺10.880 |
+
+Kural sıraya orantılıya çevrildi (`62626c1`): hem case'in lafzına uyuldu, hem ödül yapısı anlamlı hale geldi.
+
+### Para matematiğinde iki sızıntı
+
+- **%55'in tamamının 1. oyuncuya gitmesi.** Kuyruktaki oyuncuların skoru yoksa orantı tanımsız kalıyor, `%55` hiç dağıtılmıyor ve artık hesabı tamamını 1. oyuncuya ekliyordu — o oyuncu case'in öngördüğü %20 yerine **%75** alıyordu (`c5ed594`).
+- **Özet toplamının float'a düşmesi.** `getRewardHistory`, projenin "para asla float'a düşmez" disiplinini tam da para toplarken kırıyordu (`6992203`).
+
+İkisi de testle sabitlendi. Dikkat çekici olan şu: mevcut test birinci sorunu **yakalamıyordu**, çünkü yalnızca toplamı kontrol ediyor, parayı kimin aldığına bakmıyordu. Test de güçlendirildi ve eski kodla kırmızıya düştüğü doğrulandı.
+
+### Klasör yapısının toparlanması
+
+Yönlendirme netti: *"30 kişilik bir ekip bu depoya girdiğinde herkes okuyabilmeli."* Yön de belirtildi — modül sınırlarına dokunulmayacak, her modülün içi katmanlara ayrılacak, testler kaynak dosyaların yanından çıkarılacak.
+
+Bir alternatif olarak katman bazlı yapı (tüm controller'lar tek klasörde) sunuldu ve değerlendirildi; bir özelliğe dokunmak için birden çok klasör gezmeyi gerektirdiği için tercih edilmedi. Uygulanan yapı (`1e8daba`):
+
+```
+leaderboard/
+├── controllers/   ├── services/
+├── dto/           └── tests/
+```
+
+33 dosyanın import yolu güncellendi; TypeScript hatası sıfır, 58 birim + 10 e2e test geçti, uygulama ayağa kalktı ve tüm uçlar doğrulandı.
+
+### Testin kendi ortamını kirletmesi
+
+E2E testi gerçek bir skor gönderiyor ve sahte kullanıcıyı canlı sıralamada bırakıyordu; sıralamadan oyuncu seçen uçlar bu üyeyi seçip Postgres'te bulamayınca **404** dönüyordu. Yani test, kendisinden sonra çalışan her şeyi bozuyordu — ve bu, canlı sistemde fark edildi.
+
+`afterAll` artık sahte kullanıcıyı siliyor **ve havuza yaptığı katkıyı geri alıyor** (`45ca24b`); aksi halde her koşu ödül havuzunu birkaç kuruş şişirirdi. Temizliğin çalıştığı, koşu sonrası Redis durumu seed değerleriyle karşılaştırılarak doğrulandı.
 
 ---
 
@@ -225,33 +328,25 @@ Aşağıdakiler araca sorulup kabul edilen öneriler değil, gerekçesiyle veril
 
 - **Bakiyede `Decimal`, `Float` değil.** Kayan nokta aritmetiği para için yuvarlama hatası üretir; 2M kullanıcıda bu sızıntı demektir. Aynı disiplin ödül matematiğinde de sürdürüldü: havuz Redis'te **kuruş cinsinden tamsayı** tutuluyor (`INCRBY`), çünkü `INCRBYFLOAT` haftada milyonlarca artışta sapma biriktirir.
 - **`RewardLog` üzerinde `(userId, seasonId)` tekil kısıtı.** Dağıtım job'ının yeniden çalışması ihtimaline karşı idempotency, uygulama kodunda değil **veritabanı seviyesinde** garanti altına alındı. Redis kilidi tek başına yeterli değildir — TTL dolabilir, Redis yeniden başlayabilir; asıl güvence veritabanı kısıtıdır.
-- **Bakiyenin `increment` ile güncellenmesi.** Postgres `UPDATE ... SET balance = balance + x` ifadesini satır kilidi altında atomik uygular; eşzamanlı iki ödül yazımı birbirini ezmez. `Wallet.version` alanı yalnızca yazım sayacıdır.
+- **Bakiyenin `increment` ile güncellenmesi.** Postgres `UPDATE ... SET balance = balance + x` ifadesini satır kilidi altında atomik uygular; eşzamanlı iki ödül yazımı birbirini ezmez. Okuyup hesaplayıp geri yazmak lost update riski doğururdu. (Denetimde belgenin ve kod yorumlarının bu korumayı yanlışlıkla `Wallet.version` alanına atfettiği görüldü — o alan yalnızca yazım sayacıdır, `where: { version }` kontrolü yoktur; yorumlar gerçeğe göre düzeltildi.)
 - **Sıralamanın Redis'te olması.** Liderlik tablosunun okuma yolu transactional veritabanında sıralama veya tarama yapmaz. Bu iddia ölçümle sınandı: 100.000 üyelik ZSET'te `ZREVRANK`, 200 üyelikle **aynı süreyi** verdi (49 ms) ve 99.000. sıradaki oyuncunun penceresi ilk 10 kadar hızlı çekildi.
 - **Kimlik doğrulamanın sıfır I/O olması.** JWT guard yalnızca bellekte HMAC imza kontrolü yapar. Ölçüldü: doğrulama başına **22 mikrosaniye** — bir Redis çağrısının 2.200'de biri. Yazma yolu kimlik doğrulama yüzünden yavaşlamıyor.
 - **Healthcheck'lerde gerçekçi parametreler.** `pg_isready` çağrısına `-U`/`-d` verildi; bunlar olmadan komut varsayılan kullanıcıya bakar ve veritabanı hazır değilken yanlışlıkla "hazır" raporlayabilir. Mongo için `start_period: 20s` verildi, çünkü ilk açılışta başlatma işlemi port açıldıktan sonra da devam eder.
 
 ---
 
-## Açık Bırakılan Riskler
-
-Doğrulama disiplininin bir parçası da, kapatılmayanı açıkça söylemektir:
-
-- **`POST /api/rewards/distribute` erişimi.** Uç bu aşamada rol kontrolüyle korundu. (Sonraki denetim turunda case metni yeniden okunduğunda bu katmanın gereksiz olduğu görüldü ve kaldırıldı; ucun güvencesi idempotency'ye bırakıldı.)
-- ~~**Neon `-pooler` endpoint'i kullanılmıyor.**~~ **Kapatıldı.** `DATABASE_URL` geliştirici tarafından pooler endpoint'ine (PgBouncer) çevrildi ve canlı olarak sınandı: interactive transaction, rollback ve tekrarlı parametreli sorgular sorunsuz çalışıyor (PgBouncer transaction mode'un klasik kırılma noktaları). 100 oyunculuk gerçek dağıtım 1.26 sn'de tamamlandı. Kazanç 400 eş zamanlı bağlantıda ölçüldü: **pooler 179 bağlantı kabul ederken direct endpoint hiçbirini kabul edemedi (0/400).**
-- **Ölçümler üretim koşullarını temsil etmiyor.** Gecikme sayıları geliştirici makinesinden Frankfurt/İrlanda'daki cloud servislere alındı; RTT ~60 ms. Üretimde sunucu ve Redis aynı bölgede olur ve bu süre 1-2 ms'ye düşer.
-
----
-
 ## Özetle
 
-Yapay zeka bu projede **iskelet kurma, tekrarlayan yapılandırma, ölçüm ve dokümantasyon taslağı** aşamalarında hız kazandırdı. Kod tabanını tarayarak, tek başına gözden kaçabilecek üç somut sorunu yüzeye çıkardı.
+Bu projede yapay zeka **iskelet kurma, tekrarlayan yapılandırma, kod tarama, ölçüm ve dokümantasyon taslağı** aşamalarında kullanıldı. Tek başına gözden kaçabilecek somut sorunları yüzeye çıkardı: eksik Mongo veritabanı adı, Prisma 7 adapter zorunluluğu, transaction timeout'u, ödül kuyruğundaki para sızıntısı, belge–kod tutarsızlıkları.
 
-Buna karşılık direksiyon geliştiricide kaldı:
+İş akışının belirleyici kuralı tek cümleyle şudur: **hiçbir iddia, ölçülmeden kabul edilmez.**
 
-- Ekonomi modelinin kuralları (havuz katkısı, cüzdan davranışı, dağıtım tetikleme),
-- Güvenlik sınırları (kimliğin nereden okunacağı, sezonun kim tarafından belirleneceği),
-- Mimari sınırlar (hangi yolun hangi veri deposuna dokunacağı),
-- Aracın önerilerinin reddedildiği noktalar (`audit fix --force`, teste uydurulmuş kod),
-- Ve bu belgenin kendisinin gerçeğe sadık kalması
+Bu kural üç şekilde işledi:
 
-insan kararıdır. Aracın değeri, ürettiği kod kadar **ürettiği kodun nerede sorgulandığıyla** ölçülür.
+- **Doğrulama** — "Redis O(log N)" gibi bir cümle iddia olarak bırakılmadı, 100.000 üyeye çıkılıp ölçüldü. Idempotency, ödül matematiği, pooler geçişi, JWT doğrulaması hep canlı servislere karşı sınandı.
+- **Teşhisin sorgulanması** — İnandırıcı ama yanlış bir teşhis üretilebilir. Var olmayan bir React sorunu için hazırlanan düzeltme, ölçüm iddiayı çürüttüğü için geri alındı.
+- **Kapsamın çerçevelenmesi** — Case'in istemediği bir yetkilendirme katmanı, iyi yazılmış olmasına rağmen kaldırıldı. Kapsamı büyütmek kolaydır; geri çekmek karardır.
+
+Ekonomi modelinin kuralları, güvenlik ve mimari sınırlar, `%55`'in nasıl dağıtılacağı, klasör yapısının hangi desende toparlanacağı — bunların hepsi gerekçesiyle verilmiş **tasarım kararlarıdır.**
+
+Bir aracın değeri, ürettiği kod kadar **ürettiği kodun nerede sorgulandığıyla** ölçülür.
