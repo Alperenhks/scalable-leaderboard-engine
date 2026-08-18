@@ -280,6 +280,81 @@ def chart_browser():
     return True
 
 
+# ------------------------------------------------- 6) Ülke sıralaması
+def chart_country():
+    """
+    Ülke sorgusu global sorgudan yavaş DEĞİL.
+
+    Bunu göstermek önemli: "ülke filtresi" denince akla global tabloyu
+    çekip elemek gelir ve bu 2M üyede tüm sıralamayı taramak demektir.
+    Burada her ülke ayrı bir ZSET olduğu için sorgu aynı O(log N + M)
+    maliyetiyle çalışır — küme daha küçük olduğu için bir tık da hızlıdır.
+    """
+    pairs = [
+        ("leaderboard\n(ilk 100)", "country_global", "country_scoped"),
+        ("around\n(3üst+2alt)", "country_around_global", "country_around_scoped"),
+    ]
+    rows = []
+    for label, gk, ck in pairs:
+        g, c = load(gk), load(ck)
+        if g and c:
+            rows.append((label, g, c))
+    if not rows:
+        return False
+
+    labels = [r[0] for r in rows]
+    g_rps = [r[1]["requests"]["average"] for r in rows]
+    c_rps = [r[2]["requests"]["average"] for r in rows]
+    g_p50 = [r[1]["latency"]["p50"] for r in rows]
+    c_p50 = [r[2]["latency"]["p50"] for r in rows]
+
+    x = range(len(labels))
+    w = 0.36
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.4))
+
+    b1 = ax1.bar([i - w / 2 for i in x], g_rps, w, label="Global", color=MUTED)
+    b2 = ax1.bar([i + w / 2 for i in x], c_rps, w, label="Ülke (?country=TR)",
+                 color=GOOD)
+    for bars, vals in ((b1, g_rps), (b2, c_rps)):
+        for b, v in zip(bars, vals):
+            ax1.text(b.get_x() + b.get_width() / 2, v, f"{v:.0f}",
+                     ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax1.set_xticks(list(x))
+    ax1.set_xticklabels(labels)
+    ax1.set_ylabel("İstek/saniye")
+    ax1.set_title("Verim", fontweight="bold")
+    ax1.legend(frameon=False, fontsize=9)
+    ax1.grid(alpha=0.25, axis="y", linestyle="--")
+    ax1.set_ylim(0, max(g_rps + c_rps) * 1.25)
+
+    b3 = ax2.bar([i - w / 2 for i in x], g_p50, w, label="Global", color=MUTED)
+    b4 = ax2.bar([i + w / 2 for i in x], c_p50, w, label="Ülke", color=GOOD)
+    for bars, vals in ((b3, g_p50), (b4, c_p50)):
+        for b, v in zip(bars, vals):
+            ax2.text(b.get_x() + b.get_width() / 2, v, f"{v:.0f}ms",
+                     ha="center", va="bottom", fontsize=9, fontweight="bold")
+    ax2.set_xticks(list(x))
+    ax2.set_xticklabels(labels)
+    ax2.set_ylabel("p50 gecikme (ms)")
+    ax2.set_title("Gecikme", fontweight="bold")
+    ax2.legend(frameon=False, fontsize=9)
+    ax2.grid(alpha=0.25, axis="y", linestyle="--")
+    ax2.set_ylim(0, max(g_p50 + c_p50) * 1.25)
+
+    fig.suptitle(
+        "Ülke sıralaması global kadar hızlı — ayrı ZSET, filtre değil",
+        fontsize=12, fontweight="bold", y=1.02)
+    fig.text(0.5, -0.04,
+             "Her ülke kendi Redis ZSET'inde indekslenir; global tablo taranıp "
+             "filtrelenmez · canlı Render, 50 eşzamanlı bağlantı",
+             ha="center", fontsize=8.5, style="italic", color=INK)
+    fig.tight_layout()
+    fig.savefig(CHARTS / "country.png", bbox_inches="tight")
+    plt.close(fig)
+    return True
+
+
 def main():
     if not RESULTS.exists() or not any(RESULTS.glob("*.json")):
         bail("perf/results boş — önce ./perf/run-benchmark.sh çalıştırın")
@@ -290,6 +365,7 @@ def main():
         "endpoints.png": chart_endpoints(),
         "page-size.png": chart_page_size(),
         "capacity.png": chart_capacity(),
+        "country.png": chart_country(),
     }
     for name, ok in made.items():
         print(f"{'✔' if ok else '·'} {name}{'' if ok else ' (veri yok, atlandı)'}")

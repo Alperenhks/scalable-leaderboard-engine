@@ -291,6 +291,14 @@ Yalnızca Redis'e giden uçlar (`season`, `rank`) beklendiği gibi en hızlısı
 
 `limit` 10'dan 100'e çıkarken maliyet **10 kat değil ~1.4 kat** artıyor. Sıralama Redis'te O(log N + M) olduğu ve Postgres'e yalnızca görünen sayfanın adları için tek sorgu gittiği için maliyet sayfa boyutuyla orantılıdır, tablo boyutuyla değil.
 
+### Ülke sıralaması: ayrı indeks, filtre değil
+
+![Ülke sıralaması](perf/charts/country.png)
+
+Ülke sorgusu global sorgudan **yavaş değil, daha hızlı** — çünkü her ülke kendi Redis ZSET'inde indekslenir. "Global tabloyu çekip ülkeye göre ele" yaklaşımı 2M üyede tüm sıralamayı taramak demek olurdu; ayrı ZSET ile maliyet aynı O(log N + M) kalır ve küme küçüldüğü için bir tık daha iyi ölçülür.
+
+Yazma yolu da yavaşlamaz: ülke `ZINCRBY`'si mevcut pipeline'a eklenir (ek ağ turu yok) ve ülke bilgisi Postgres'ten değil profil cache'inden okunur.
+
 ### Profil cache'i: ölçüm → teşhis → düzeltme
 
 İlk ölçümde `leaderboard` beklenenden yavaştı. Teşhis için her veri deposuna tek tek gecikme ölçüldü:
