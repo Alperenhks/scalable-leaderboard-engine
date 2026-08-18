@@ -139,9 +139,9 @@ Bu olayda kritik olan başka bir doğrulama daha yapıldı: hata sonrası verita
 
 ### Talebin kaynağı
 
-Uçlar çalışır durumdaydı ve ölçümler kabul edilebilir görünüyordu. Geliştirici bu noktada durmadı: `/api/me` ucunun her istekte Postgres'e iki ayrı sorgu atmasının, 2M DAU hedefindeki bir sistemde kalıcı bir darboğaz olduğunu tespit etti ve optimize edilmesini istedi.
+Uçlar çalışır durumdaydı ve ölçümler kabul edilebilir görünüyordu. Süreç burada durmadı: `/api/me` her istekte Postgres'e iki ayrı sorgu atıyordu ve bu, 2M DAU hedefindeki bir sistemde kalıcı bir darboğaz demekti.
 
-Bu, aracın kendiliğinden gündeme getirmeyeceği bir taleptir — uç zaten "çalışıyor" durumdaydı.
+Bu tür bir talep, "çalışıyor" ile "ölçekte çalışır" arasındaki farkı görmekten doğar — uç zaten yeşil yanıyordu, kimse şikâyet etmiyordu.
 
 ### Ölçüm önce, çözüm sonra
 
@@ -226,17 +226,67 @@ Sağ sütun bu belgenin asıl konusu. Sol sütunun hızı, ancak sağ sütun iş
 
 ---
 
-## Teslim Öncesi Denetim Turu: Nasıl Çalıştı
+## Commit Commit: Süreç Nasıl İlerledi
 
-Kod tamamlandıktan sonra proje, case gereksinimlerine ve kod kalitesine karşı ayrı bir turda tarandı. Bu tur, iş akışının en öğretici kısmı oldu — çünkü burada otomasyonun hızı ile kararın yavaşlığı sürekli birbirine değdi.
+Aşağıdaki tablo, projenin nasıl geliştiğini commit geçmişi üzerinden gösterir. Her satırın karşılığı `git log` çıktısında bulunabilir; belge ile depo yan yana okunabilsin diye hash'ler verilmiştir.
 
-Döngü hep aynı şekilde işledi:
+### Faz 1 — İskelet ve ilk çalışan sürüm
+
+| Commit | Ne oldu |
+| --- | --- |
+| `fd5007c` | Çekirdek: skor gönderimi, ZSET sıralaması, "3 üst / 2 alt" penceresi, ödül havuzu. Kod yazmadan önce yazılı plan onaya sunuldu; MongoDB'nin rolü, Prisma şemasının derinliği ve HTTP motoru (Fastify) belirsiz bırakılmadı, açıkça soruldu. |
+| `83b4571`, `19f6fc9` | CORS: önce Vercel, sonra Vite dev sunucusu. İstemci ayrı bir projede geliştirildiği için ortaya çıkan gerçek ihtiyaç. |
+| `c84633e` | Seed + kimlik seçimi. "Jüri projeyi klonlayıp ne görecek?" sorusu, seed'in senaryo farkındalıklı olmasını getirdi: skor dağılımı üstel, oyuncuların %1'i bilinçli olarak sıralama dışı (`rank: null` yolunu göstermek için), rastgelelik deterministik. |
+| `23c5072` | Komşu penceresinin tablo sınırlarında kırpılması — 1. sıradaki oyuncunun üstünde kimse olmadığı fark edildiğinde. |
+
+### Faz 2 — Ölçüm ve performans
+
+Bu fazın tamamı tek bir soruyla başladı: *"gerçekten hızlı mı, yoksa öyle mi sanıyoruz?"*
+
+| Commit | Ne oldu |
+| --- | --- |
+| `2094957` | **Ölçüm → teşhis → düzeltme.** `leaderboard` beklenenden yavaştı. Her veri deposuna tek tek bakıldı; `SELECT 1` bile 57 ms sürüyordu — maliyet satır sayısından değil **ağ turundan** geliyordu. Profil cache'i eklendi, `around` ucundaki iki arama tek pipeline'da birleştirildi. Ölçüldü: `leaderboard` 66→117 RPS, `around` 77→153 RPS. |
+| `66f1c25`, `796226e` | Ölçüm sonuçları grafiklendi ve depoya kondu (`perf/`). İddia değil, çıktı paylaşıldı. |
+| `81a950d` | Ülke sıralaması. Kolay yol "global tabloyu çekip filtrele" olurdu; 2M üyede bu tüm sıralamayı taramak demek. Her ülke kendi ZSET'inde indekslendi — sorgu global sorguyla aynı maliyette kaldı. |
+| `a4f1f0c`, `e9a1fb5` | `/me` ucu üç ayrı Postgres sorgusu atıyordu. Ölçüm, Postgres'e giden uçların eşzamanlılıkla ölçeklenmediğini gösterdi (p50 76ms → 489ms). Cüzdan özeti cache'lendi; uç artık Postgres'e hiç dokunmuyor. |
+
+### Faz 3 — Teslim öncesi denetim
+
+Kod tamamlandıktan sonra proje case gereksinimlerine ve kod kalitesine karşı yeniden tarandı. Bu fazda bulguların çoğu **davranışsal olarak görünmeyen** türdendi: derleme geçiyor, testler yeşil, ama kural yanlış uygulanmış.
+
+| Commit | Ne oldu |
+| --- | --- |
+| `be4d94e` | Render'ın uyku sorunu için ping kuruldu. *(Bu çözüm yetersiz çıktı — aşağıya bakınız.)* |
+| `c5ed594` | **Para sızıntısı.** Kuyruktaki oyuncuların skoru yoksa `%55` hiç dağıtılmıyor, artık hesabı tamamını 1. oyuncuya ekliyordu: case'in öngördüğü %20 yerine **%75**. Mevcut test bunu yakalamıyordu çünkü yalnızca toplamı kontrol ediyor, parayı **kimin aldığına** bakmıyordu. |
+| `62626c1` | **Case metninin yeniden okunması.** *"based on their rank"* ifadesi skoru değil sırayı işaret ediyordu; uygulama skora orantılı dağıtıyordu. Karar ölçüme dayandırıldı: ilk 100'ün skorları birbirine çok yakın (1,18 kat) olduğu için skora orantılı dağıtımda 4. sıra 100.'den yalnızca %18 fazla alıyordu. Sıra tabanlı ağırlıkta fark **97 kata** çıktı. |
+| `e8c078c` | Sağlık ucu `"Hello World!"` döndürüyordu. Liveness (süreç ayakta mı) ve readiness (istek alabilir mi) ayrıldı; readiness üç veri deposunu paralel yokluyor, biri düşükse `503` dönüyor. |
+| `d231396` | `getAround` case'in 8. maddesinin tek uygulayıcısıydı ve unit testi yoktu. 14 test yazıldı; testlerin gerçekten koruduğu, sınır kırpması ve "3 üst / 2 alt" sabitleri kasten bozularak doğrulandı (ikisinde de kırmızıya düştü). |
+| `f3d9f56` | **Kapsamın geri çekilmesi.** Dağıtım ucuna eklenen `ADMIN_SECRET` koruması, case metni taranınca gereksiz çıktı: "admin", "role", "login" kelimelerinin hiçbiri geçmiyordu. Koruma kaldırıldı, hiçbir uca bağlı olmayan RBAC altyapısı (~185 satır) silindi. Ucun güvencesi guard yerine idempotency'ye bırakıldı. |
+| `a59623c` | `PlayersService`, cüzdan cache'i için `LeaderboardService`'i enjekte ediyordu — sıralamayla hiç işi yokken. `CacheService` ayrıldı. Bu değişiklik dairesel import doğurdu ve uygulama ayağa kalkmadı; TypeScript ve unit testler yakalamadı, yalnızca çalıştırınca görüldü. |
+| `a2bd91a` | `RewardStatus.PENDING`/`FAILED` ve `failureReason` hiç yazılmıyordu — şema, gerçekte var olmayan bir yeteneği vaat ediyordu. |
+| `0f6173f` | Aynı sezon doğrulaması 5 DTO'da tekrarlıyordu; biri sabiti import etmek yerine regex'i **kopyalamıştı** (sabit değişse sessizce ayrışırdı). Tek decorator'da toplandı, 5 uç canlı doğrulandı. |
+| `6992203` | Ödül geçmişi toplamı `Number(amount)` ile hesaplanıyordu — projenin "para asla float'a düşmez" disiplini tam da para toplarken kırılıyordu. |
+| `1e8daba` | **Yapı kararı.** *"30 kişilik bir ekip bu depoya girdiğinde herkes okuyabilmeli."* Katman bazlı bir alternatif (tüm controller'lar tek klasörde) değerlendirildi ve reddedildi: bir özelliğe dokunmak için birden çok klasör gezmeyi gerektiriyordu. Modül sınırlarına dokunulmadan her modülün içi katmanlara ayrıldı. |
+| `45ca24b` | E2E testi sahte kullanıcıyı canlı sıralamada bırakıyordu; sonraki her koşuyu bozuyordu. Bu, canlı sistemde `404` olarak fark edildi. |
+| `e26614f` | **Tek ölçümün yetmediği yer.** `be4d94e`'deki ping 16 dakikalık tek bir testle doğrulanmıştı ve test geçmişti. Ertesi gün servis yine uyudu: gerçek tetikleme aralıkları 19-32 dakika arasında değişiyordu, çünkü GitHub Actions `schedule` zamanlama garantisi vermez. Ping iki katmanlı hale getirildi. |
+| `4d825af`, `71bdcb5` | Belgeler sadeleştirildi. README 643→462 satır. Sadeleştirme sırasında üç eskimiş ifade yakalandı: paylaşım tablosu hâlâ "skorlarıyla orantılı" diyordu, "roller (player/admin)" satırı kaldırılmış bir rolden bahsediyordu, uç tablosunda `distribute` hâlâ "🔒 admin" işaretliydi. |
+
+### Bu tablodan çıkan desen
+
+Üç fazda da aynı döngü tekrarlıyor:
 
 ```
-soru sorulur → tarama yapılır, bulgu gerekçesiyle sunulur
-             → iddia ölçümle sınanır
-             → sonuç: uygula / kapsamı daralt / geri al
+bir soru sorulur  →  tarama/ölçüm yapılır  →  bulgu gerekçesiyle sunulur
+                  →  iddia sınanır         →  uygula / daralt / geri al
 ```
+
+Fark, sorunun kimden geldiği değil, **cevabın neye dayandırıldığıdır.** Faz 2'de "hızlı mı?" sorusu grafiklerle, Faz 3'te "case'e uygun mu?" sorusu metnin birebir okunmasıyla ve canlı veriyle cevaplandı. Hiçbir aşamada "muhtemelen doğrudur" kabul edilmedi — `c5ed594` ve `62626c1` bunun karşılığıdır: ikisi de testleri geçen, çalışan, ama **yanlış** koddu.
+
+---
+
+## Üç Durumun Ayrıntısı
+
+Commit tablosundaki üç satır, iş akışının nasıl işlediğini en iyi gösterenler. Ayrıntıları burada:
 
 ### Ölçüm, teşhisi değiştirdiğinde
 
@@ -244,81 +294,23 @@ Tarayıcı ağ panelinde aynı uçların birden çok kez çağrıldığı fark e
 
 Kabul etmek yerine ölçüm istendi. Ölçüm teşhisi çürüttü: düzeltilmiş ve düzeltilmemiş sürümler **aynı sayıda** istek atıyordu (6). Gerçek sebep basitti — case senaryolarını denemek için persona seçici elle üç kez kullanılmıştı: `6 açılış + 3 × 5 = 21`, tarayıcıdaki sayıyla birebir.
 
-Hazırlanan düzeltme geri alındı. **Var olmayan bir soruna yazılan kod, kodun kendisinden pahalıdır** — ve bu ancak ölçümle anlaşılır.
+Hazırlanan düzeltme geri alındı ve depoya hiç girmedi. **Var olmayan bir soruna yazılan kod, kodun kendisinden pahalıdır** — ve bunu ancak ölçüm söyler.
 
-### Kapsamın case'e göre daraltılması
+### Kapsamın case metnine göre daraltılması (`f3d9f56`)
 
-Ödül dağıtım ucu için `ADMIN_SECRET` tabanlı bir koruma önerildi ve uygulandı. Ardından gelen soru kapsamı yeniden çerçeveledi: *case bir yetkilendirme sistemi istiyor mu?*
+Ödül dağıtım ucu için `ADMIN_SECRET` tabanlı bir koruma önerildi ve uygulandı (`efe2746`). Ardından gelen soru kapsamı yeniden çerçeveledi: *case bir yetkilendirme sistemi istiyor mu?*
 
 Case metni tarandı — "admin", "role", "login" kelimelerinin hiçbiri geçmiyordu. İstenen tek otomasyon şuydu: *"Rewards should go out automatically at the end of the week."* Bu zaten cron ile karşılanıyordu.
 
-Karar: koruma kaldırıldı (`f3d9f56`). Ucun güvencesi guard yerine **idempotency**'ye bırakıldı — aynı sezon ikinci kez dağıtılamaz. Aynı kararla, hiçbir uca bağlı olmayan RBAC altyapısı (`RolesGuard`, `@Roles`, `Role.ADMIN`, ~185 satır) de silindi.
+Koruma kaldırıldı; ucun güvencesi guard yerine **idempotency**'ye bırakıldı (aynı sezon ikinci kez dağıtılamaz). Aynı kararla, hiçbir uca bağlı olmayan RBAC altyapısı da silindi.
 
-Bu, iş akışının önemli bir yanını gösteriyor: **kapsamı büyütmek kolay, geri çekmek karardır.** Case'in istemediği bir katman, ne kadar iyi yazılmış olursa olsun fazlalıktır.
-
-### Tek ölçümün yetmediği yer
-
-Render'ın ücretsiz planı 15 dakika boşta kalan servisi uyutuyordu. Çözüm olarak GitHub Actions ile 10 dakikada bir ping kuruldu ve 16 dakikalık bir bekleme testiyle doğrulandı — test geçti.
-
-Ertesi gün servisin yine uyuduğu fark edildi. İnceleme, tek testin **şanslı bir pencereye** denk geldiğini gösterdi: gerçek tetikleme aralıkları 19-32 dakika arasında değişiyordu, çünkü GitHub Actions'ın `schedule` tetikleyicisi zamanlama garantisi vermez.
-
-```
-#2 22:57   #3 23:16 (+19)   #4 23:41 (+25)   #5 00:00 (+19)   #6 00:32 (+32)
-```
-
-Çözüm iki katmanlı hale getirildi: birincil ping garantili çalışan harici bir zamanlayıcıya taşındı, Actions yedek olarak kaldı. **Tekrarlanabilirliği olmayan bir ölçüm, kanıt değildir.**
+Bunun bir bedeli oldu: koruma kaldırılırken README ve API.md güncellenmedi, belgeler olmayan bir `adminSecret` alanını anlatmaya devam etti. Sonraki denetim turunda yakalandı — belgedeki komut birebir çalıştırılsa **400** dönecekti. **Kod ile belge aynı anda değişmezse, belge sessizce yalan söylemeye başlar.**
 
 ### Yıkıcı işlemlerin onaya bağlanması
 
 Ödül dağıtımı akışı doğrulanırken yerel sunucu başlatıldı — ancak sunucu `.env` üzerinden **canlı** veritabanlarına bağlıydı. Dağıtım gerçekten çalıştı ve canlı sıralamayı sıfırladı.
 
-İşlem geri alınabilirdi (`npm run seed -- --reset`) ve dağıtımın doğru çalıştığını kanıtladı, ama öncesinde sorulmalıydı. Bu olaydan sonra yıkıcı komutlar açık onaya bağlandı.
-
----
-
-## Denetimde Çıkan Bulgular ve Verilen Kararlar
-
-Tarama somut bulgular üretti; her birinde **ne yapılacağı ayrı bir karardı.**
-
-### Ödül kuralının case metnine göre düzeltilmesi
-
-Case: *"the remaining 55% is distributed among players ranked 4th through 100th, **based on their rank**."* Uygulama bunu skora orantılı yapıyordu.
-
-Karar ölçüme dayandırıldı. Canlı veri, skora orantılı dağıtımın kuralı işlevsiz kıldığını gösterdi: ilk 100'e girenlerin skorları birbirine çok yakındır (1,18 kat), dolayısıyla 4. sıra 100. sıradan yalnızca **%18** fazla alıyordu. Sıra tabanlı ağırlıkta aynı fark **97 kata** çıkıyor.
-
-| | Skora oranlı | Sıraya oranlı (seçilen) |
-| --- | --- | --- |
-| 4. sıranın payı | ₺585.957 | ₺1.055.313 |
-| 100. sıranın payı | ₺497.536 | ₺10.880 |
-
-Kural sıraya orantılıya çevrildi (`62626c1`): hem case'in lafzına uyuldu, hem ödül yapısı anlamlı hale geldi.
-
-### Para matematiğinde iki sızıntı
-
-- **%55'in tamamının 1. oyuncuya gitmesi.** Kuyruktaki oyuncuların skoru yoksa orantı tanımsız kalıyor, `%55` hiç dağıtılmıyor ve artık hesabı tamamını 1. oyuncuya ekliyordu — o oyuncu case'in öngördüğü %20 yerine **%75** alıyordu (`c5ed594`).
-- **Özet toplamının float'a düşmesi.** `getRewardHistory`, projenin "para asla float'a düşmez" disiplinini tam da para toplarken kırıyordu (`6992203`).
-
-İkisi de testle sabitlendi. Dikkat çekici olan şu: mevcut test birinci sorunu **yakalamıyordu**, çünkü yalnızca toplamı kontrol ediyor, parayı kimin aldığına bakmıyordu. Test de güçlendirildi ve eski kodla kırmızıya düştüğü doğrulandı.
-
-### Klasör yapısının toparlanması
-
-Yönlendirme netti: *"30 kişilik bir ekip bu depoya girdiğinde herkes okuyabilmeli."* Yön de belirtildi — modül sınırlarına dokunulmayacak, her modülün içi katmanlara ayrılacak, testler kaynak dosyaların yanından çıkarılacak.
-
-Bir alternatif olarak katman bazlı yapı (tüm controller'lar tek klasörde) sunuldu ve değerlendirildi; bir özelliğe dokunmak için birden çok klasör gezmeyi gerektirdiği için tercih edilmedi. Uygulanan yapı (`1e8daba`):
-
-```
-leaderboard/
-├── controllers/   ├── services/
-├── dto/           └── tests/
-```
-
-33 dosyanın import yolu güncellendi; TypeScript hatası sıfır, 58 birim + 10 e2e test geçti, uygulama ayağa kalktı ve tüm uçlar doğrulandı.
-
-### Testin kendi ortamını kirletmesi
-
-E2E testi gerçek bir skor gönderiyor ve sahte kullanıcıyı canlı sıralamada bırakıyordu; sıralamadan oyuncu seçen uçlar bu üyeyi seçip Postgres'te bulamayınca **404** dönüyordu. Yani test, kendisinden sonra çalışan her şeyi bozuyordu — ve bu, canlı sistemde fark edildi.
-
-`afterAll` artık sahte kullanıcıyı siliyor **ve havuza yaptığı katkıyı geri alıyor** (`45ca24b`); aksi halde her koşu ödül havuzunu birkaç kuruş şişirirdi. Temizliğin çalıştığı, koşu sonrası Redis durumu seed değerleriyle karşılaştırılarak doğrulandı.
+İşlem geri alınabilirdi (`npm run seed -- --reset`) ve dağıtımın uçtan uca doğru çalıştığını kanıtladı: ₺94.018.764,62'lik havuz 100 oyuncuya kuruşu kuruşuna dağıtıldı, havuz ve sıralama sıfırlandı, ikinci deneme `409` döndü. Ama bu doğrulama öncesinde sorulmalıydı. Bu olaydan sonra yıkıcı komutlar açık onaya bağlandı.
 
 ---
 
