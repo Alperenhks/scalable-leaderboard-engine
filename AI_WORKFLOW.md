@@ -2,7 +2,7 @@
 
 Bu belge, projenin yapay zeka ile **nasıl** geliştirildiğini anlatır: hangi işler araca devredildi, hangi kararlar insanda kaldı ve üretilen kodun doğruluğu neye göre belirlendi.
 
-Belgedeki her örnek gerçek oturum akışından ve commit geçmişinden alınmıştır.
+Belgedeki her örnek gerçek oturum akışından ve commit geçmişinden alınmıştır; metinde geçen commit hash'leri `git log` çıktısıyla birebir eşleşir.
 
 ---
 
@@ -234,10 +234,10 @@ Aşağıdaki tablo, projenin nasıl geliştiğini commit geçmişi üzerinden g�
 
 | Commit | Ne oldu |
 | --- | --- |
-| `fd5007c` | Çekirdek: skor gönderimi, ZSET sıralaması, "3 üst / 2 alt" penceresi, ödül havuzu. Kod yazmadan önce yazılı plan onaya sunuldu; MongoDB'nin rolü, Prisma şemasının derinliği ve HTTP motoru (Fastify) belirsiz bırakılmadı, açıkça soruldu. |
-| `83b4571`, `19f6fc9` | CORS: önce Vercel, sonra Vite dev sunucusu. İstemci ayrı bir projede geliştirildiği için ortaya çıkan gerçek ihtiyaç. |
-| `c84633e` | Seed + kimlik seçimi. "Jüri projeyi klonlayıp ne görecek?" sorusu, seed'in senaryo farkındalıklı olmasını getirdi: skor dağılımı üstel, oyuncuların %1'i bilinçli olarak sıralama dışı (`rank: null` yolunu göstermek için), rastgelelik deterministik. |
-| `23c5072` | Komşu penceresinin tablo sınırlarında kırpılması — 1. sıradaki oyuncunun üstünde kimse olmadığı fark edildiğinde. |
+| `8621b21` | Çekirdek: skor gönderimi, ZSET sıralaması, "3 üst / 2 alt" penceresi, ödül havuzu. Kod yazmadan önce yazılı plan onaya sunuldu; MongoDB'nin rolü, Prisma şemasının derinliği ve HTTP motoru (Fastify) belirsiz bırakılmadı, açıkça soruldu. |
+| `0dd1d9c`, `4d16b11` | CORS: önce Vercel, sonra Vite dev sunucusu. İstemci ayrı bir projede geliştirildiği için ortaya çıkan gerçek ihtiyaç. |
+| `8ffeefd` | Seed + kimlik seçimi. "Jüri projeyi klonlayıp ne görecek?" sorusu, seed'in senaryo farkındalıklı olmasını getirdi: skor dağılımı üstel, oyuncuların %1'i bilinçli olarak sıralama dışı (`rank: null` yolunu göstermek için), rastgelelik deterministik. |
+| `8e371af` | Komşu penceresinin tablo sınırlarında kırpılması — 1. sıradaki oyuncunun üstünde kimse olmadığı fark edildiğinde. |
 
 ### Faz 2 — Ölçüm ve performans
 
@@ -245,10 +245,10 @@ Bu fazın tamamı tek bir soruyla başladı: *"gerçekten hızlı mı, yoksa öy
 
 | Commit | Ne oldu |
 | --- | --- |
-| `2094957` | **Ölçüm → teşhis → düzeltme.** `leaderboard` beklenenden yavaştı. Her veri deposuna tek tek bakıldı; `SELECT 1` bile 57 ms sürüyordu — maliyet satır sayısından değil **ağ turundan** geliyordu. Profil cache'i eklendi, `around` ucundaki iki arama tek pipeline'da birleştirildi. Ölçüldü: `leaderboard` 66→117 RPS, `around` 77→153 RPS. |
-| `66f1c25`, `796226e` | Ölçüm sonuçları grafiklendi ve depoya kondu (`perf/`). İddia değil, çıktı paylaşıldı. |
-| `81a950d` | Ülke sıralaması. Kolay yol "global tabloyu çekip filtrele" olurdu; 2M üyede bu tüm sıralamayı taramak demek. Her ülke kendi ZSET'inde indekslendi — sorgu global sorguyla aynı maliyette kaldı. |
-| `a4f1f0c`, `e9a1fb5` | `/me` ucu üç ayrı Postgres sorgusu atıyordu. Ölçüm, Postgres'e giden uçların eşzamanlılıkla ölçeklenmediğini gösterdi (p50 76ms → 489ms). Cüzdan özeti cache'lendi; uç artık Postgres'e hiç dokunmuyor. |
+| `b9e9e92` | **Ölçüm → teşhis → düzeltme.** `leaderboard` beklenenden yavaştı. Her veri deposuna tek tek bakıldı; `SELECT 1` bile 57 ms sürüyordu — maliyet satır sayısından değil **ağ turundan** geliyordu. Profil cache'i eklendi, `around` ucundaki iki arama tek pipeline'da birleştirildi. Ölçüldü: `leaderboard` 66→117 RPS, `around` 77→153 RPS. |
+| `5204c5c`, `cf11fb6` | Ölçüm sonuçları grafiklendi ve depoya kondu (`perf/`). İddia değil, çıktı paylaşıldı. |
+| `6b68752` | Ülke sıralaması. Kolay yol "global tabloyu çekip filtrele" olurdu; 2M üyede bu tüm sıralamayı taramak demek. Her ülke kendi ZSET'inde indekslendi — sorgu global sorguyla aynı maliyette kaldı. |
+| `4962866`, `caccba1` | `/me` ucu üç ayrı Postgres sorgusu atıyordu. Ölçüm, Postgres'e giden uçların eşzamanlılıkla ölçeklenmediğini gösterdi (p50 76ms → 489ms). Cüzdan özeti cache'lendi; uç artık Postgres'e hiç dokunmuyor. |
 
 ### Faz 3 — Teslim öncesi denetim
 
@@ -256,20 +256,20 @@ Kod tamamlandıktan sonra proje case gereksinimlerine ve kod kalitesine karşı 
 
 | Commit | Ne oldu |
 | --- | --- |
-| `be4d94e` | Render'ın uyku sorunu için ping kuruldu. *(Bu çözüm yetersiz çıktı — aşağıya bakınız.)* |
-| `c5ed594` | **Para sızıntısı.** Kuyruktaki oyuncuların skoru yoksa `%55` hiç dağıtılmıyor, artık hesabı tamamını 1. oyuncuya ekliyordu: case'in öngördüğü %20 yerine **%75**. Mevcut test bunu yakalamıyordu çünkü yalnızca toplamı kontrol ediyor, parayı **kimin aldığına** bakmıyordu. |
-| `62626c1` | **Case metninin yeniden okunması.** *"based on their rank"* ifadesi skoru değil sırayı işaret ediyordu; uygulama skora orantılı dağıtıyordu. Karar ölçüme dayandırıldı: ilk 100'ün skorları birbirine çok yakın (1,18 kat) olduğu için skora orantılı dağıtımda 4. sıra 100.'den yalnızca %18 fazla alıyordu. Sıra tabanlı ağırlıkta fark **97 kata** çıktı. |
-| `e8c078c` | Sağlık ucu `"Hello World!"` döndürüyordu. Liveness (süreç ayakta mı) ve readiness (istek alabilir mi) ayrıldı; readiness üç veri deposunu paralel yokluyor, biri düşükse `503` dönüyor. |
-| `d231396` | `getAround` case'in 8. maddesinin tek uygulayıcısıydı ve unit testi yoktu. 14 test yazıldı; testlerin gerçekten koruduğu, sınır kırpması ve "3 üst / 2 alt" sabitleri kasten bozularak doğrulandı (ikisinde de kırmızıya düştü). |
-| `f3d9f56` | **Kapsamın geri çekilmesi.** Dağıtım ucuna eklenen `ADMIN_SECRET` koruması, case metni taranınca gereksiz çıktı: "admin", "role", "login" kelimelerinin hiçbiri geçmiyordu. Koruma kaldırıldı, hiçbir uca bağlı olmayan RBAC altyapısı (~185 satır) silindi. Ucun güvencesi guard yerine idempotency'ye bırakıldı. |
-| `a59623c` | `PlayersService`, cüzdan cache'i için `LeaderboardService`'i enjekte ediyordu — sıralamayla hiç işi yokken. `CacheService` ayrıldı. Bu değişiklik dairesel import doğurdu ve uygulama ayağa kalkmadı; TypeScript ve unit testler yakalamadı, yalnızca çalıştırınca görüldü. |
-| `a2bd91a` | `RewardStatus.PENDING`/`FAILED` ve `failureReason` hiç yazılmıyordu — şema, gerçekte var olmayan bir yeteneği vaat ediyordu. |
-| `0f6173f` | Aynı sezon doğrulaması 5 DTO'da tekrarlıyordu; biri sabiti import etmek yerine regex'i **kopyalamıştı** (sabit değişse sessizce ayrışırdı). Tek decorator'da toplandı, 5 uç canlı doğrulandı. |
-| `6992203` | Ödül geçmişi toplamı `Number(amount)` ile hesaplanıyordu — projenin "para asla float'a düşmez" disiplini tam da para toplarken kırılıyordu. |
-| `1e8daba` | **Yapı kararı.** *"30 kişilik bir ekip bu depoya girdiğinde herkes okuyabilmeli."* Katman bazlı bir alternatif (tüm controller'lar tek klasörde) değerlendirildi ve reddedildi: bir özelliğe dokunmak için birden çok klasör gezmeyi gerektiriyordu. Modül sınırlarına dokunulmadan her modülün içi katmanlara ayrıldı. |
-| `45ca24b` | E2E testi sahte kullanıcıyı canlı sıralamada bırakıyordu; sonraki her koşuyu bozuyordu. Bu, canlı sistemde `404` olarak fark edildi. |
-| `e26614f` | **Tek ölçümün yetmediği yer.** `be4d94e`'deki ping 16 dakikalık tek bir testle doğrulanmıştı ve test geçmişti. Ertesi gün servis yine uyudu: gerçek tetikleme aralıkları 19-32 dakika arasında değişiyordu, çünkü GitHub Actions `schedule` zamanlama garantisi vermez. Ping iki katmanlı hale getirildi. |
-| `4d825af`, `71bdcb5` | Belgeler sadeleştirildi. README 643→462 satır. Sadeleştirme sırasında üç eskimiş ifade yakalandı: paylaşım tablosu hâlâ "skorlarıyla orantılı" diyordu, "roller (player/admin)" satırı kaldırılmış bir rolden bahsediyordu, uç tablosunda `distribute` hâlâ "🔒 admin" işaretliydi. |
+| `34e345e` | Render'ın uyku sorunu için ping kuruldu. *(Bu çözüm yetersiz çıktı — aşağıya bakınız.)* |
+| `4da0f47` | **Para sızıntısı.** Kuyruktaki oyuncuların skoru yoksa `%55` hiç dağıtılmıyor, artık hesabı tamamını 1. oyuncuya ekliyordu: case'in öngördüğü %20 yerine **%75**. Mevcut test bunu yakalamıyordu çünkü yalnızca toplamı kontrol ediyor, parayı **kimin aldığına** bakmıyordu. |
+| `173b92c` | **Case metninin yeniden okunması.** *"based on their rank"* ifadesi skoru değil sırayı işaret ediyordu; uygulama skora orantılı dağıtıyordu. Karar ölçüme dayandırıldı: ilk 100'ün skorları birbirine çok yakın (1,18 kat) olduğu için skora orantılı dağıtımda 4. sıra 100.'den yalnızca %18 fazla alıyordu. Sıra tabanlı ağırlıkta fark **97 kata** çıktı. |
+| `4fbef69` | Sağlık ucu `"Hello World!"` döndürüyordu. Liveness (süreç ayakta mı) ve readiness (istek alabilir mi) ayrıldı; readiness üç veri deposunu paralel yokluyor, biri düşükse `503` dönüyor. |
+| `c9ba3d7` | `getAround` case'in 8. maddesinin tek uygulayıcısıydı ve unit testi yoktu. 14 test yazıldı; testlerin gerçekten koruduğu, sınır kırpması ve "3 üst / 2 alt" sabitleri kasten bozularak doğrulandı (ikisinde de kırmızıya düştü). |
+| `f5928db` | **Kapsamın geri çekilmesi.** Dağıtım ucuna eklenen `ADMIN_SECRET` koruması, case metni taranınca gereksiz çıktı: "admin", "role", "login" kelimelerinin hiçbiri geçmiyordu. Koruma kaldırıldı, hiçbir uca bağlı olmayan RBAC altyapısı (~185 satır) silindi. Ucun güvencesi guard yerine idempotency'ye bırakıldı. |
+| `5dda77a` | `PlayersService`, cüzdan cache'i için `LeaderboardService`'i enjekte ediyordu — sıralamayla hiç işi yokken. `CacheService` ayrıldı. Bu değişiklik dairesel import doğurdu ve uygulama ayağa kalkmadı; TypeScript ve unit testler yakalamadı, yalnızca çalıştırınca görüldü. |
+| `216a74f` | `RewardStatus.PENDING`/`FAILED` ve `failureReason` hiç yazılmıyordu — şema, gerçekte var olmayan bir yeteneği vaat ediyordu. |
+| `ab315f8` | Aynı sezon doğrulaması 5 DTO'da tekrarlıyordu; biri sabiti import etmek yerine regex'i **kopyalamıştı** (sabit değişse sessizce ayrışırdı). Tek decorator'da toplandı, 5 uç canlı doğrulandı. |
+| `d77aa80` | Ödül geçmişi toplamı `Number(amount)` ile hesaplanıyordu — projenin "para asla float'a düşmez" disiplini tam da para toplarken kırılıyordu. |
+| `4b672e4` | **Yapı kararı.** *"30 kişilik bir ekip bu depoya girdiğinde herkes okuyabilmeli."* Katman bazlı bir alternatif (tüm controller'lar tek klasörde) değerlendirildi ve reddedildi: bir özelliğe dokunmak için birden çok klasör gezmeyi gerektiriyordu. Modül sınırlarına dokunulmadan her modülün içi katmanlara ayrıldı. |
+| `6169bfb` | E2E testi sahte kullanıcıyı canlı sıralamada bırakıyordu; sonraki her koşuyu bozuyordu. Bu, canlı sistemde `404` olarak fark edildi. |
+| `3ad22ee` | **Tek ölçümün yetmediği yer.** `34e345e`'deki ping 16 dakikalık tek bir testle doğrulanmıştı ve test geçmişti. Ertesi gün servis yine uyudu: gerçek tetikleme aralıkları 19-32 dakika arasında değişiyordu, çünkü GitHub Actions `schedule` zamanlama garantisi vermez. Ping iki katmanlı hale getirildi. |
+| `621e871`, `9f8f095` | Belgeler sadeleştirildi. README 643→462 satır. Sadeleştirme sırasında üç eskimiş ifade yakalandı: paylaşım tablosu hâlâ "skorlarıyla orantılı" diyordu, "roller (player/admin)" satırı kaldırılmış bir rolden bahsediyordu, uç tablosunda `distribute` hâlâ "🔒 admin" işaretliydi. |
 
 ### Bu tablodan çıkan desen
 
@@ -280,7 +280,7 @@ bir soru sorulur  →  tarama/ölçüm yapılır  →  bulgu gerekçesiyle sunul
                   →  iddia sınanır         →  uygula / daralt / geri al
 ```
 
-Fark, sorunun kimden geldiği değil, **cevabın neye dayandırıldığıdır.** Faz 2'de "hızlı mı?" sorusu grafiklerle, Faz 3'te "case'e uygun mu?" sorusu metnin birebir okunmasıyla ve canlı veriyle cevaplandı. Hiçbir aşamada "muhtemelen doğrudur" kabul edilmedi — `c5ed594` ve `62626c1` bunun karşılığıdır: ikisi de testleri geçen, çalışan, ama **yanlış** koddu.
+Fark, sorunun kimden geldiği değil, **cevabın neye dayandırıldığıdır.** Faz 2'de "hızlı mı?" sorusu grafiklerle, Faz 3'te "case'e uygun mu?" sorusu metnin birebir okunmasıyla ve canlı veriyle cevaplandı. Hiçbir aşamada "muhtemelen doğrudur" kabul edilmedi — `4da0f47` ve `173b92c` bunun karşılığıdır: ikisi de testleri geçen, çalışan, ama **yanlış** koddu.
 
 ---
 
@@ -296,9 +296,9 @@ Kabul etmek yerine ölçüm istendi. Ölçüm teşhisi çürüttü: düzeltilmi�
 
 Hazırlanan düzeltme geri alındı ve depoya hiç girmedi. **Var olmayan bir soruna yazılan kod, kodun kendisinden pahalıdır** — ve bunu ancak ölçüm söyler.
 
-### Kapsamın case metnine göre daraltılması (`f3d9f56`)
+### Kapsamın case metnine göre daraltılması (`f5928db`)
 
-Ödül dağıtım ucu için `ADMIN_SECRET` tabanlı bir koruma önerildi ve uygulandı (`efe2746`). Ardından gelen soru kapsamı yeniden çerçeveledi: *case bir yetkilendirme sistemi istiyor mu?*
+Ödül dağıtım ucu için `ADMIN_SECRET` tabanlı bir koruma önerildi ve uygulandı (`d15c68d`). Ardından gelen soru kapsamı yeniden çerçeveledi: *case bir yetkilendirme sistemi istiyor mu?*
 
 Case metni tarandı — "admin", "role", "login" kelimelerinin hiçbiri geçmiyordu. İstenen tek otomasyon şuydu: *"Rewards should go out automatically at the end of the week."* Bu zaten cron ile karşılanıyordu.
 
