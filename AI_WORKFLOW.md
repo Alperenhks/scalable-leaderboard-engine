@@ -270,6 +270,10 @@ Kod tamamlandıktan sonra proje case gereksinimlerine ve kod kalitesine karşı 
 | `6169bfb` | E2E testi sahte kullanıcıyı canlı sıralamada bırakıyordu; sonraki her koşuyu bozuyordu. Bu, canlı sistemde `404` olarak fark edildi. |
 | `3ad22ee` | **Tek ölçümün yetmediği yer.** `34e345e`'deki ping 16 dakikalık tek bir testle doğrulanmıştı ve test geçmişti. Ertesi gün servis yine uyudu: gerçek tetikleme aralıkları 19-32 dakika arasında değişiyordu, çünkü GitHub Actions `schedule` zamanlama garantisi vermez. Ping iki katmanlı hale getirildi. |
 | `621e871`, `9f8f095` | Belgeler sadeleştirildi. README 643→462 satır. Sadeleştirme sırasında üç eskimiş ifade yakalandı: paylaşım tablosu hâlâ "skorlarıyla orantılı" diyordu, "roller (player/admin)" satırı kaldırılmış bir rolden bahsediyordu, uç tablosunda `distribute` hâlâ "🔒 admin" işaretliydi. |
+| `61bb11c` | Persona listesinde "ilk 100'ün İÇİNDE ama zirvede değil" durumu eksikti — oysa case'in *"ilk 100'ü görüyorum ama kendi sıramı bulamıyorum"* şikâyeti tam bu oyuncunun durumu. `contender` modu (53. sıra) eklendi. |
+| `d0021a2` | `distributeSeason`'ın hiç unit testi yoktu. Para hesabı kapsanıyordu ama **davranış** — hangi adımın hangi sırada çalıştığı — yalnızca kod okumasıyla doğrulanabiliyordu. 8 test eklendi; en kritiği case'in 6. maddesinin sırasını sabitliyor (Postgres önce, Redis sonra). Testin gerçekten koruduğu, sıralama kasten bozularak doğrulandı. |
+| `20030ec` | Yorumlar doğru bilgiydi ama yanlış yerdeydi: aynı kural gövdedeki üç ayrı bloğa dağılmış, her metotta yeniden anlatılmıştı. Dört sıcak dosyada düzen kuruldu — dosya başında okuma kılavuzu, gövdede yalnızca o metoda özgü not. Ölçüm içeren ve reddedilen alternatifi anlatan yorumlara dokunulmadı. |
+| `d55c170` | **Ölçek iddiasının kanıtlanması.** README "sıralama maliyeti oyuncu sayısıyla artmaz" diyordu ama kanıtı yoktu. `perf/scale-test.mjs` 1.000'den 1.000.000 üyeye kadar ölçtü: bin kat büyümede süre değişmiyor (`ZREVRANK` 51,8 → 52,0 ms). Seed varsayılanı 20.000'e çıkarıldı — ölçek kanıtı artık ayrı testte olduğu için seed'in işi yalnızca case senaryolarını görünür kılmak. |
 
 ### Bu tablodan çıkan desen
 
@@ -284,7 +288,7 @@ Fark, sorunun kimden geldiği değil, **cevabın neye dayandırıldığıdır.**
 
 ---
 
-## Üç Durumun Ayrıntısı
+## Bazı Durumların Ayrıntısı
 
 Commit tablosundaki üç satır, iş akışının nasıl işlediğini en iyi gösterenler. Ayrıntıları burada:
 
@@ -305,6 +309,37 @@ Case metni tarandı — "admin", "role", "login" kelimelerinin hiçbiri geçmiyo
 Koruma kaldırıldı; ucun güvencesi guard yerine **idempotency**'ye bırakıldı (aynı sezon ikinci kez dağıtılamaz). Aynı kararla, hiçbir uca bağlı olmayan RBAC altyapısı da silindi.
 
 Bunun bir bedeli oldu: koruma kaldırılırken README ve API.md güncellenmedi, belgeler olmayan bir `adminSecret` alanını anlatmaya devam etti. Sonraki denetim turunda yakalandı — belgedeki komut birebir çalıştırılsa **400** dönecekti. **Kod ile belge aynı anda değişmezse, belge sessizce yalan söylemeye başlar.**
+
+### Tek ölçümün yetmediği yer (`3ad22ee`)
+
+Render'ın ücretsiz planı 15 dakika boşta kalan servisi uyutuyordu. Çözüm olarak GitHub Actions ile 10 dakikada bir ping kuruldu ve 16 dakikalık bir bekleme testiyle doğrulandı — test geçti, "çalışıyor" denildi.
+
+Ertesi gün servisin yine uyuduğu fark edildi. İnceleme, tek testin **şanslı bir pencereye** denk geldiğini gösterdi: gerçek tetikleme aralıkları 19-32 dakika arasında değişiyordu, çünkü GitHub Actions'ın `schedule` tetikleyicisi zamanlama garantisi vermez.
+
+```
+#2 22:57   #3 23:16 (+19)   #4 23:41 (+25)   #5 00:00 (+19)   #6 00:32 (+32)
+```
+
+Birincil ping tetiklemeyi garanti eden harici bir zamanlayıcıya taşındı, Actions yedek katman olarak kaldı. Yeni kurgu bu kez **20 dakikalık** boşta beklemeyle sınandı — eşiğin üzerinde bir süre seçildi ki ping çalışmıyorsa servis kesin uyusun. Sonuç: 304 ms.
+
+**Tekrarlanabilirliği olmayan bir ölçüm kanıt değildir.** İlk test yanlış değildi; yetersizdi.
+
+### İddianın ölçekte sınanması (`d55c170`)
+
+README, mimarinin temel iddiasını yazıyordu: sıralama maliyeti oyuncu sayısıyla değil sayfa boyutuyla orantılıdır. Ama örnek veri 5.000 oyuncuydu ve case 2M günlük aktif oyuncudan bahsediyordu — iddia ile kanıt arasında üç mertebe fark vardı.
+
+`perf/scale-test.mjs` ZSET'i kademeli büyütüp her adımda aynı sorguları çalıştırıyor. Bin kat büyümede süre değişmedi:
+
+```
+    1.000 üye → ZREVRANK 51,8 ms
+1.000.000 üye → ZREVRANK 52,0 ms
+```
+
+Ölçülen sürenin neredeyse tamamı ağ turu; sıralamanın kendi maliyeti ölçüm hassasiyetinin altında kaldı.
+
+Test 1.360.000 üyede Upstash'in ücretsiz plan sınırına (anahtar başına 100 MB) takıldı. Script bunu bir **kod sınırından ayırt edip** raporluyor, çökmüyor — barındırma planının sınırını mimarinin sınırı gibi göstermek yanıltıcı olurdu.
+
+Bu ölçüm seed'in ölçeğini de serbest bıraktı: ölçek kanıtı artık ayrı bir testte olduğu için örnek verinin işi yalnızca case senaryolarını görünür kılmak (20.000 oyuncu).
 
 ### Yıkıcı işlemlerin onaya bağlanması
 
@@ -335,8 +370,9 @@ Bu projede yapay zeka **iskelet kurma, tekrarlayan yapılandırma, kod tarama, �
 
 Bu kural üç şekilde işledi:
 
-- **Doğrulama** — "Redis O(log N)" gibi bir cümle iddia olarak bırakılmadı, 100.000 üyeye çıkılıp ölçüldü. Idempotency, ödül matematiği, pooler geçişi, JWT doğrulaması hep canlı servislere karşı sınandı.
+- **Doğrulama** — "Redis O(log N)" gibi bir cümle iddia olarak bırakılmadı; 1.000.000 üyeye çıkılıp ölçüldü ve sürenin değişmediği gösterildi. Idempotency, ödül matematiği, pooler geçişi, JWT doğrulaması hep canlı servislere karşı sınandı.
 - **Teşhisin sorgulanması** — İnandırıcı ama yanlış bir teşhis üretilebilir. Var olmayan bir React sorunu için hazırlanan düzeltme, ölçüm iddiayı çürüttüğü için geri alındı.
+- **Ölçümün kendisinin sorgulanması** — Keep-alive tek bir testle "doğrulandı" sanıldı; test geçmişti ama şanslı bir pencereye denk gelmişti. Tekrarlanabilirliği olmayan ölçüm kanıt değildir.
 - **Kapsamın çerçevelenmesi** — Case'in istemediği bir yetkilendirme katmanı, iyi yazılmış olmasına rağmen kaldırıldı. Kapsamı büyütmek kolaydır; geri çekmek karardır.
 
 Ekonomi modelinin kuralları, güvenlik ve mimari sınırlar, `%55`'in nasıl dağıtılacağı, klasör yapısının hangi desende toparlanacağı — bunların hepsi gerekçesiyle verilmiş **tasarım kararlarıdır.**
