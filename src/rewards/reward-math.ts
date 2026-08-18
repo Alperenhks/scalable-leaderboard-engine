@@ -58,11 +58,19 @@ export function minorUnitsToDecimalString(minor: bigint): string {
  *   1.       -> %20
  *   2.       -> %15
  *   3.       -> %10
- *   4..100   -> kalan %55, skorlarıyla ORANTILI
+ *   4..100   -> kalan %55, SIRALARINA orantılı
  *
- * 4-100 aralığında skora oranlı dağıtım seçildi (eşit bölüşüm değil): 4. ile
- * 100. oyuncunun katkısı arasında büyük fark olabilir ve eşit pay, sıralamanın
- * anlamını bu aralıkta tamamen silerdi.
+ * Case'in ifadesi birebir şudur: "the remaining 55% is distributed among
+ * players ranked 4th through 100th, based on their rank." Ağırlık bu yüzden
+ * sıradan türetilir (`REWARDED_PLAYER_COUNT + 1 - rank`): 4. sıra en yüksek,
+ * 100. sıra en düşük payı alır ve pay sırayla doğrusal azalır.
+ *
+ * Skora orantılı dağıtım denendi ve ÖLÇÜLEREK reddedildi: ilk 100'e girenlerin
+ * skorları birbirine çok yakın olduğu için (canlı veride 4. ile 100. arasında
+ * yalnızca 1,18 kat fark) ödüller de neredeyse eşitleniyordu — 4. sıradaki
+ * oyuncu 100. sıradakinden yalnızca %18 fazla alıyordu ve sıralamanın bu
+ * aralıkta pratik bir karşılığı kalmıyordu. Sıra tabanlı ağırlıkta aynı fark
+ * 97 kata çıkar; rekabetin ödülü görünür olur.
  *
  * Yuvarlama artığı 1. oyuncuya eklenir; böylece dağıtılan toplam havuza tam
  * eşit olur ve kuruş ne kaybolur ne de yoktan var edilir.
@@ -92,29 +100,20 @@ export function allocatePrizePool(
     }
   });
 
-  // 4-100 arası: kalan %55, skorla orantılı.
+  // 4-100 arası: kalan %55, SIRAYA orantılı.
+  //
+  // Ağırlık sıradan türetilir; skor hesaba girmez. Böylece pay yalnızca
+  // sıralamaya bağlıdır ve iki oyuncunun skoru ne kadar yakın olursa olsun
+  // aralarındaki sıra farkı ödüle yansır.
   const remainderPool = percentOf(poolMinor, REMAINDER_SHARE);
   const tail = allocations.slice(TOP_SHARES.length);
-  const totalTailScore = tail.reduce(
-    (sum, a) => sum + BigInt(Math.max(0, a.score)),
-    0n,
-  );
 
   if (tail.length > 0) {
-    if (totalTailScore > 0n) {
-      for (const allocation of tail) {
-        const weight = BigInt(Math.max(0, allocation.score));
-        allocation.amountMinor = (remainderPool * weight) / totalTailScore;
-      }
-    } else {
-      // Kuyruktaki herkesin skoru 0 (ya da negatif): orantı tanımsızdır.
-      // Bu durumda %55 EŞİT bölünür — dağıtılmadan bırakılırsa aşağıdaki
-      // artık hesabı tamamını 1. oyuncuya eklerdi ve o oyuncu case'in
-      // öngördüğü %20 yerine %75 alırdı.
-      const perPlayer = remainderPool / BigInt(tail.length);
-      for (const allocation of tail) {
-        allocation.amountMinor = perPlayer;
-      }
+    const weights = tail.map((a) => rankWeight(a.rank));
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0n);
+
+    for (const [index, allocation] of tail.entries()) {
+      allocation.amountMinor = (remainderPool * weights[index]) / totalWeight;
     }
   }
 
@@ -134,6 +133,18 @@ export function allocatePrizePool(
 
   // Sıfır paylı kayıt yazılmaz — RewardLog'u anlamsız satırlarla şişirmemek için.
   return allocations.filter((a) => a.amountMinor > 0n);
+}
+
+/**
+ * Bir sıranın 4-100 paylaşımındaki ağırlığı.
+ *
+ * 4. sıra en yüksek (97), 100. sıra en düşük (1) ağırlığı alır; aradaki
+ * azalma doğrusaldır. Ağırlık daima pozitiftir, dolayısıyla ödül alan her
+ * oyuncuya sıfırdan büyük bir pay düşer ve `REWARDED_PLAYER_COUNT` sınırının
+ * dışına taşan bir sıra buraya hiç gelmez.
+ */
+function rankWeight(rank: number): bigint {
+  return BigInt(Math.max(1, REWARDED_PLAYER_COUNT + 1 - rank));
 }
 
 /** BigInt aritmetiğiyle yüzde: ara adımda float'a düşmez. */

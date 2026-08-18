@@ -235,6 +235,8 @@ Tüm uçların tam sözleşmesi — istek/yanıt gövdeleri, doğrulama kurallar
 | Uç | Kimlik | Ne yapar |
 | --- | --- | --- |
 | `POST /api/auth/identify` | ➖ | Oyuncu kimliği seçer, JWT üretir |
+| `GET /` | ➖ | Liveness — süreç ayakta mı (bağımlılıklara bakmaz) |
+| `GET /api/health` | ➖ | Readiness — üç veri deposunu yoklar, düşükse `503` |
 | `GET /api/auth/players` | ➖ | Oyuncu listesi / arama |
 | `GET /api/leaderboard` | ➖ | İlk N (limit ≤ 100), `?country=TR` ile ülke sıralaması |
 | `GET /api/leaderboard/around` | 🔒 | ⭐ 3 üst + kendisi + 2 alt penceresi (`?country` destekler) |
@@ -243,7 +245,7 @@ Tüm uçların tam sözleşmesi — istek/yanıt gövdeleri, doğrulama kurallar
 | `GET /api/rewards/season` | ➖ | Geri sayım, havuz, dağıtım oranları |
 | `GET /api/rewards/pool` | ➖ | Yalnızca havuz tutarı |
 | `GET /api/rewards/projection` | ➖/🔒 | Tahmini ödüller + kendi payı |
-| `POST /api/rewards/distribute` | 🔒 admin | Dağıtımı tetikler (yıkıcı) |
+| `POST /api/rewards/distribute` | 🔒 admin | Dağıtımı elle tetikler (yıkıcı) — cron zaten otomatik çalışır |
 | `GET /api/me` | 🔒 | Sıra + skor + bakiye + son ödül |
 | `GET /api/me/wallet` | 🔒 | Cüzdan bakiyesi |
 | `GET /api/me/rewards` | 🔒 | Ödül geçmişi |
@@ -253,6 +255,7 @@ Tüm uçların tam sözleşmesi — istek/yanıt gövdeleri, doğrulama kurallar
 - **`delta` mutlak skor değildir.** İstemci fark gönderir, sunucu `ZINCRBY` ile uygular — iki istemci aynı anda yazdığında kayıp güncelleme olmaz.
 - **`userId` ve `seasonId` istek gövdesinde kabul edilmez.** Biri token'dan, diğeri sunucunun ISO haftasından gelir; gönderilirse `forbidNonWhitelisted` sayesinde istek `400` alır. Aksi halde biri kimlik sahteciliğine, diğeri kapanmış sezona yazmaya açık olurdu.
 - **`rank: null` asla `0`'a çevrilmez.** `0` birincilik anlamına gelirdi; sıralamada yer almamak ayrı bir durumdur.
+- **Admin token istek gövdesinden alınamaz.** `POST /api/auth/identify` yalnızca sunucudaki `ADMIN_SECRET` ile eşleşen bir sır sunulduğunda admin token üretir; değişken tanımlı değilse hiç üretmez. Case kimlik doğrulama istemiyor, ancak para dağıtan bir ucun herkese açık olması ayrı bir sorundur — haftalık dağıtım zaten cron ile otomatiktir, bu uç yalnızca dağıtımın elle gösterilebilmesi içindir.
 
 ### Örnek istek
 
@@ -379,18 +382,21 @@ Negatif delta (ceza/düzeltme) havuzu **küçültmez**: bir oyuncuya kesilen cez
 
 #### "based on their rank" ifadesinin yorumu
 
-Case metni 4-100 aralığı için *"distributed among players ranked 4th through 100th, **based on their rank**"* diyor. Bu ifade iki türlü okunabilir ve **sıraya değil skora oranlı** dağıtım seçildi:
+Case metni 4-100 aralığı için *"distributed among players ranked 4th through 100th, **based on their rank**"* diyor. İfade skoru değil **sırayı** işaret ediyor ve uygulama birebir bunu yapıyor: ağırlık `REWARDED_PLAYER_COUNT + 1 - rank` ile sıradan türetilir, skor hesaba hiç girmez.
 
-| Okuma | Ne yapar | Neden seçilmedi / seçildi |
+Skora oranlı bir dağıtım da denendi ve **ölçülerek reddedildi.** Gerekçe teorik değil, canlı veriden:
+
+| | Skora oranlı | Sıraya oranlı (seçilen) |
 | --- | --- | --- |
-| Sıra ağırlıklı (ör. ağırlık = `101 - rank`) | 4. sıradaki 5. sıradakinden hep daha çok alır, skorları eşit olsa bile | Skor farkını tamamen yok sayar; 4. oyuncu 100.'nün iki katı skor yapmışsa bu görünmez |
-| **Skora oranlı (seçilen)** | Pay, oyuncunun o haftaki gerçek katkısıyla orantılı | Havuzun kaynağı skorun %2'si; havuza ne kadar katkı yaptıysan payın da o oranda olması tutarlı |
+| 4. sıranın payı | ₺585.957 | ₺1.055.313 |
+| 100. sıranın payı | ₺497.536 | ₺10.880 |
+| **4. / 100. oranı** | **1,2x** | **97x** |
 
-Belirleyici gerekçe: **havuz skordan doğuyor.** Havuza giren para her oyuncunun kazandığı paranın %2'si olduğuna göre, geri dağıtımın da aynı ölçüye dayanması ekonomik olarak tutarlıdır. Sıra ağırlıklı dağıtımda skoru iki kat olan bir oyuncu yalnızca bir sıra farkı kadar fazla alırdı.
+Sorun şu: ilk 100'e girenlerin skorları birbirine çok yakın (canlı veride en yüksek 4.434.015, en düşük 3.764.923 — yalnızca **1,18 kat** fark). Skora oranlı dağıtımda bu yakınlık ödüllere de yansıyor ve 4. sıradaki oyuncu 100. sıradakinden yalnızca **%18** fazla alıyor. Yani sıralamanın 4-100 aralığında pratik bir karşılığı kalmıyor — oysa rekabetçi bir liderlik tablosunda ödülün asıl işlevi tam olarak bu farkı görünür kılmak.
 
-Sıralamanın anlamı yine korunur: **ilk üç sıra sabit yüzdelerle (%20/%15/%10) ödüllendirilir** — orada sıra, skordan bağımsız olarak belirleyicidir. Skora oranlı bölüşüm yalnızca 4-100 kuyruğunda geçerlidir.
+Sıra tabanlı ağırlıkta pay doğrusal azalır: 4. sıra en yüksek, 100. sıra en düşük payı alır ve aradaki her sıra bir öncekinden ölçülebilir biçimde daha azını alır.
 
-> Sıra ağırlıklı dağıtım tercih edilirse değişiklik tek satırdır: `reward-math.ts` içinde ağırlık `allocation.score` yerine `REWARDED_PLAYER_COUNT + 1 - allocation.rank` olur. Dağıtımın geri kalanı (havuz koruma, yuvarlama artığı) aynen çalışır.
+İlk üç sıra bu kuraldan bağımsızdır; onlar case'in verdiği sabit yüzdelerle (%20/%15/%10) ödüllendirilir.
 
 ### Para hassasiyeti
 
