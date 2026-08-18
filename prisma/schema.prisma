@@ -80,9 +80,7 @@ model RewardLog {
   /// Ödül anındaki skoru (denetim için dondurulmuş kopya).
   score         BigInt
   amount        Decimal      @db.Decimal(18, 4)
-  status        RewardStatus @default(PENDING)
-  /// Dağıtım başarısız olduysa nedeni.
-  failureReason String?
+  status        RewardStatus @default(DISTRIBUTED)
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -92,12 +90,20 @@ model RewardLog {
 
   @@unique([userId, seasonId])
   @@index([seasonId, rank])
-  @@index([status])
   @@map("reward_logs")
 }
 
+/// Ödül kaydının durumu.
+///
+/// Şu an tek bir değer vardır ve bu bilinçlidir: `RewardLog` kaydı ile cüzdan
+/// artışı AYNI transaction'da yazılır (`rewards.service.ts`), dolayısıyla kayıt
+/// ya tamamen oluşur ya hiç oluşmaz — "beklemede" veya "başarısız" bir ara durum
+/// üretilemez. Önceden `PENDING`/`FAILED` değerleri ve bir `failureReason` alanı
+/// tanımlıydı ama hiçbir kod yolu bunları yazmıyordu; şema, gerçekte var olmayan
+/// bir yeteneği vaat ediyordu.
+///
+/// Alan yine de tutuluyor: ödeme sağlayıcısına yapılan gerçek bir transfer
+/// eklendiğinde ara durumlar burada anlam kazanır.
 enum RewardStatus {
-  PENDING
   DISTRIBUTED
-  FAILED
 }
