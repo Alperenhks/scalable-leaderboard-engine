@@ -370,27 +370,79 @@ Kabul edilen origin'ler:
 
 ---
 
-## 8. Sözleşme özeti
+## 8. Uç özeti — hangisi ne işe yarar?
 
-| Uç | Kimlik | Not |
+Kimlik sütunu: ➖ herkese açık · 🔒 token gerekli · ➖/🔒 opsiyonel (token'lı istek daha fazlasını alır)
+
+### Kimlik
+
+| Uç | Kimlik | Ne işe yarar |
 | --- | --- | --- |
-| `POST /api/auth/identify` | ➖ | Token al |
-| `GET /api/auth/players` | ➖ | Oyuncu seçici |
-| `GET /api/leaderboard` | ➖ | İlk N |
-| `GET /api/leaderboard/around` | 🔒 | ⭐ 3 üst + ben + 2 alt |
-| `GET /api/leaderboard/rank` | 🔒 | Yalnızca sıra |
-| `POST /api/score` | 🔒 | Skor artışı |
-| `GET /api/rewards/season` | ➖ | Geri sayım + oranlar |
-| `GET /api/rewards/pool` | ➖ | Havuz |
-| `GET /api/rewards/projection` | ➖/🔒 | Tahmini ödüller + kendi payın |
-| `POST /api/rewards/distribute` | 🔒 admin | Yıkıcı |
-| `GET /api/me` | 🔒 | Birleşik durum |
-| `GET /api/me/wallet` | 🔒 | Bakiye |
-| `GET /api/me/rewards` | 🔒 | Ödül geçmişi |
+| `POST /api/auth/identify` | ➖ | **Token alır.** Login yerine geçer: hangi oyuncu olarak bakılacağını seçer ve imzalı JWT döndürür. Uygulama açılışında bir kez çağrılır. `mode` ile senaryo seçilir (`top`/`mid`/`outside`/`unranked`) |
+| `GET /api/auth/players` | ➖ | **Oyuncu listesi/arama.** "Oyuncu değiştir" ekranını besler; kullanıcı adına göre arar |
+
+### Liderlik tablosu
+
+| Uç | Kimlik | Ne işe yarar |
+| --- | --- | --- |
+| `GET /api/leaderboard` | ➖ | **Ana tablo.** İlk N oyuncu (`limit` en fazla 100). Ekranın gövdesi bu |
+| `GET /api/leaderboard/around` | 🔒 | ⭐ **Case'in can alıcı özelliği.** İki şey birden verir: `entries` (oyuncu ilk 100 dışındaysa 3 üst + ben + 2 alt penceresi) ve `neighbours` (her koşulda kişiye özel çevre — 1. sıradaysan üstünde kimse çıkmaz) |
+| `GET /api/leaderboard/rank` | 🔒 | **Sadece kendi sıran.** Tabloyu çekmeden tek satır; polling için ucuz |
+
+### Skor
+
+| Uç | Kimlik | Ne işe yarar |
+| --- | --- | --- |
+| `POST /api/score` | 🔒 | **Skor artırır.** `delta` fark değeridir, mutlak skor değil. Havuza otomatik %2 katkı buradan gider. `idempotencyKey` ile tekrar gönderim çift saymaz |
+
+### Ödül ve sezon
+
+| Uç | Kimlik | Ne işe yarar |
+| --- | --- | --- |
+| `GET /api/rewards/season` | ➖ | **Geri sayım + havuz + oranlar.** Üst bandın tek kaynağı: sezon ne zaman bitiyor, havuzda ne kadar var, dağıtım yüzdeleri ne |
+| `GET /api/rewards/pool` | ➖ | **Sadece havuz tutarı.** `season`'ın hafif alternatifi; yalnızca rakam lazımsa |
+| `GET /api/rewards/projection` | ➖/🔒 | **"Şu an bitse ne kazanırım?"** İlk 100'ün tahmini payları; token'lı istekte `me.amount` ile kendi payın ve `me.pointsToEligible` ile ödüle kaç puan kaldığın. Hesap sunucuda yapılır çünkü 4-100 arası pay skora orantılı |
+| `POST /api/rewards/distribute` | 🔒 admin | **Dağıtımı tetikler.** ⚠️ Yıkıcı: sezonun sıralamasını ve havuzunu siler. Demo'da onay diyaloğu koy |
+
+### Oyuncunun kendi verileri
+
+| Uç | Kimlik | Ne işe yarar |
+| --- | --- | --- |
+| `GET /api/me` | 🔒 | **Açılış ekranının tek isteği.** Sıra + skor + bakiye + son ödül bir arada; üç ayrı istek atmaya gerek kalmaz |
+| `GET /api/me/wallet` | 🔒 | **Cüzdan bakiyesi.** Kazanılan toplam para |
+| `GET /api/me/rewards` | 🔒 | **Ödül geçmişi.** Geçmiş sezonlarda ne kazandığı + `totalEarned` |
+
+### Tipik ekran → uç eşlemesi
+
+| Ekranda ne var | Hangi uç |
+| --- | --- |
+| Üstteki geri sayım ve havuz | `GET /api/rewards/season` |
+| "Sen #121'sin" kartı | `POST /api/auth/identify` (açılış) veya `GET /api/me` |
+| İlk 100 listesi | `GET /api/leaderboard?limit=100` |
+| Her satırdaki tahmini ödül | `GET /api/rewards/projection` |
+| "Senin çevren" mini listesi | `GET /api/leaderboard/around` → `neighbours` |
+| "Ödüle 68.836 puan kaldı" | `GET /api/rewards/projection` → `me.pointsToEligible` |
+| Cüzdan / geçmiş kazanç | `GET /api/me/wallet`, `GET /api/me/rewards` |
+| Oyuncu değiştirici | `GET /api/auth/players` + `POST /api/auth/identify` |
+
+### Açılışta kaç istek?
+
+Üçü **paralel** atılır (sıralı atma, 3 kat yavaşlar):
+
+```js
+const [board, around, season] = await Promise.all([
+  fetch(`${API}/leaderboard?limit=100`).then(r => r.json()),
+  fetch(`${API}/leaderboard/around`, { headers: auth }).then(r => r.json()),
+  fetch(`${API}/rewards/season`).then(r => r.json()),
+]);
+```
+
+Ödül tahminleri gösterilecekse `projection` dördüncü olarak eklenir.
 
 **Kırılmaz kurallar:**
-1. Para daima **string** — `Number`'a çevirme.
-2. `rank: null` ≠ `rank: 0` — biri "sıralamada değil", diğeri imkânsız.
-3. `duplicate: true` hata değil, başarılı bir tekrar.
-4. `around` liste uzunluğu sabit değil (tablo sonunda kısalır).
-5. `userId`/`seasonId` skor gövdesinde gönderilmez.
+1. Para daima **string** (`amount`, `balance`, `poolAmount`) — `Number`'a çevirip aritmetik yapma, kuruş kaybolur.
+2. `rank: null` ≠ `rank: 0` — biri "sıralamada değil", diğeri imkânsız (0. sıra yok).
+3. `duplicate: true` hata değil, başarılı bir tekrar — `400` beklemeyin, `201` döner.
+4. `entries` ve `neighbours` uzunlukları **sabit değil** (tablo sınırlarında kısalır) — kendi satırını `isCurrentUser` ile bul.
+5. `userId`/`seasonId` skor gövdesinde **gönderilmez** — gönderilirse `400`.
+6. `country` **`null` olabilir** — bayrak gösterirken kontrol et.

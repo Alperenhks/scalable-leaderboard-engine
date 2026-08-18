@@ -392,7 +392,117 @@ Case: *"tested on both PC and mobile"*
 
 ---
 
-## 11. Kontrol listesi
+## 11. Soğuk başlangıç — "site açılmıyor" sanılmasın
+
+Backend Render'ın ücretsiz planında çalışıyor: **15 dakika istek almazsa uyuyor**, uyandıktan sonraki ilk istek **~50 saniye** sürebilir. Jüri siteyi ilk açtığında büyük ihtimalle bu duruma denk gelecek.
+
+Hiçbir şey yapılmazsa kullanıcı 50 saniye **boş ekrana** bakar ve siteyi bozuk sanar. Çözüm üç katmanlı:
+
+### Katman 1 — Aşamalı mesaj (zorunlu)
+
+Bekleme uzadıkça mesajı değiştir. Sabit bir spinner 50 saniye boyunca "dondu mu?" hissi verir; değişen metin sistemin çalıştığını gösterir.
+
+```jsx
+const MESSAGES = [
+  { after: 0,  text: 'Liderlik tablosu yükleniyor…' },
+  { after: 3,  text: 'Sunucu uyandırılıyor…' },
+  { after: 8,  text: 'Sunucu uykudaydı, başlatılıyor. Bu ilk açılışta ~50 sn sürebilir.' },
+  { after: 20, text: 'Neredeyse hazır… (ücretsiz sunucu soğuk başlangıcı)' },
+];
+
+function LoadingState() {
+  const [sec, setSec] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSec(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const msg = [...MESSAGES].reverse().find(m => sec >= m.after).text;
+  return (
+    <div className="loading">
+      <Spinner />
+      <p>{msg}</p>
+      {sec > 8 && <ProgressBar value={Math.min(95, (sec / 50) * 100)} />}
+    </div>
+  );
+}
+```
+
+**Neden ilerleme çubuğu %95'te duruyor:** gerçek süreyi bilmiyoruz. %100'e ulaşıp beklemeye devam etmek, hiç çubuk göstermemekten daha kötüdür.
+
+### Katman 2 — İskelet ekran (skeleton)
+
+Boş sayfa yerine tablonun **iskeletini** göster. Kullanıcı ne geleceğini görür, bekleme kısa hissettirir.
+
+```
+┌─────────────────────────────────┐
+│  ▓▓▓▓▓▓▓▓        ▓▓▓▓▓▓▓▓▓      │  ← gri bloklar (shimmer)
+├─────────────────────────────────┤
+│  ▓▓  ▓▓▓▓▓▓▓▓▓▓▓▓▓    ▓▓▓▓▓     │
+│  ▓▓  ▓▓▓▓▓▓▓▓▓▓▓      ▓▓▓▓      │
+│  ▓▓  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓   ▓▓▓▓▓     │
+└─────────────────────────────────┘
+```
+
+### Katman 3 — Erken uyandırma (en etkili)
+
+Kullanıcı hiçbir şey görmeden **önce** sunucuyu uyandır. Uygulama ilk açıldığında hafif bir istek at (`GET /` sağlık ucu), asıl verileri sonra iste. Böylece kullanıcı arayüzle uğraşırken sunucu çoktan ayağa kalkmış olur.
+
+```js
+// index.html veya main.tsx'in EN ÜSTÜ — React mount olmadan önce
+fetch('https://scalable-leaderboard-engine.onrender.com/', { mode: 'no-cors' })
+  .catch(() => {});   // sonucu umursamıyoruz, amaç sadece uyandırmak
+```
+
+Landing/giriş ekranın varsa oradan da tetikleyebilirsin — kullanıcı "Başla" butonuna basana kadar sunucu hazır olur.
+
+### Timeout ve yeniden deneme
+
+Varsayılan `fetch` timeout'u yoktur; istek sonsuza kadar bekleyebilir. Soğuk başlangıç için **60 saniyelik** bir sınır koy:
+
+```js
+async function apiFetch(path, options = {}, timeoutMs = 60_000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${API}${path}`, { ...options, signal: ctrl.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+```
+
+Timeout dolarsa kullanıcıya **elle deneme** imkânı ver — otomatik sonsuz retry yapma, uyanmayan bir sunucuyu döngüde bombalamış olursun:
+
+```jsx
+<div className="error">
+  <p>Sunucuya ulaşılamadı. Ücretsiz sunucu uyanıyor olabilir.</p>
+  <button onClick={retry}>Tekrar dene</button>
+</div>
+```
+
+### Uyanıkken tekrar uyumasın
+
+Sayfa açık kaldığı sürece 10 dakikada bir hafif bir istek atarak servisi ayakta tut:
+
+```js
+useEffect(() => {
+  const t = setInterval(() => {
+    if (document.visibilityState === 'visible') fetch(`${API}/rewards/pool`).catch(() => {});
+  }, 10 * 60 * 1000);
+  return () => clearInterval(t);
+}, []);
+```
+
+Sekme arka plandayken atma — gereksiz istek olur.
+
+> **Not:** Bu sorun tamamen Render'ın ücretsiz planından kaynaklanır, koddan değil. Ücretli plana geçilirse yukarıdaki katmanlar zararsızca çalışmaya devam eder; kaldırmak gerekmez.
+
+---
+
+## 12. Kontrol listesi
 
 Teslim öncesi:
 
@@ -407,4 +517,4 @@ Teslim öncesi:
 - [ ] Sekme arka plandayken polling duruyor
 - [ ] İlk yüklemede Render uyanma gecikmesi için yükleniyor ekranı var
 
-> **Render uyarısı:** Ücretsiz katmanda 15 dk hareketsizlikten sonra servis uyuyor, ilk istek ~50 sn sürebilir. Açılışta bir iskelet (skeleton) ekranı göster, boş sayfa bırakma.
+> **Render uyarısı:** Ücretsiz katmanda 15 dk hareketsizlikten sonra servis uyuyor, ilk istek ~50 sn sürebilir. Çözümü bölüm 11'de anlatıldı.

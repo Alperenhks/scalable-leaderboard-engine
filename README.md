@@ -10,6 +10,32 @@
 
 ---
 
+## Altyapı — tümü bulutta
+
+Hiçbir servis yerel makineye bağlı değildir; üç veri deposu da yönetilen bulut hizmetleridir. Case'in **"Cloud usage"** kriteri bu şekilde karşılanır.
+
+| Katman | Servis | Konsol | Rol |
+|---|---|---|---|
+| **API (backend)** | Render | [dashboard.render.com](https://dashboard.render.com/) | NestJS uygulaması — `main` dalına push'ta otomatik deploy |
+| **Arayüz (frontend)** | Vercel | [vercel.com](https://vercel.com/) | İstemci uygulaması; backend'den bağımsız dağıtılır |
+| **PostgreSQL** | Neon | [console.neon.tech](https://console.neon.tech/) | Kimlik, cüzdan bakiyesi, ödül geçmişi |
+| **Redis** | Upstash | [console.upstash.com/redis](https://console.upstash.com/redis) | Canlı sıralama (Sorted Set) + ödül havuzu |
+| **MongoDB** | Atlas | [cloud.mongodb.com](https://cloud.mongodb.com/) | Skor event log'ları (append-only) |
+
+İstemci ve sunucu **ayrı projelerdir** ve ayrı deploy edilir — case'in *"Client and server code should be in separate projects"* şartı gereği. Bu depo yalnızca backend'i barındırır.
+
+Bağlantı bilgilerinin hiçbiri koda gömülü değildir; tümü `.env` üzerinden okunur ve açılışta Joi ile doğrulanır.
+
+### ⚠️ Render ücretsiz katman: soğuk başlangıç
+
+Backend ücretsiz planda çalışır ve **15 dakika istek almazsa uykuya geçer.** Uyandıktan sonraki ilk istek **~50 saniye** sürebilir; sonraki istekler normal hızındadır.
+
+Bu bir hata değil, planın davranışıdır. Frontend'in bunu kullanıcıya bildirmesi gerekir — nasıl yapılacağı **[UI_GUIDE.md](UI_GUIDE.md)** içinde "Soğuk başlangıç" bölümünde anlatılmıştır.
+
+Ücretli plana geçildiğinde bu davranış tamamen ortadan kalkar; kodda hiçbir değişiklik gerekmez.
+
+---
+
 ## Mimari Genel Bakış
 
 Sistemin temel tasarım kararı, **her veri deposunun tek bir sorumluluğu olmasıdır**. Liderlik tablosunun okuma yolu transactional veritabanında sıralama veya tarama yapmaz: 2M kaydın sıralanması tamamen Redis'te gerçekleşir, Postgres'e yalnızca görüntülenen sayfadaki (en fazla 100) oyuncunun adı için tek bir indeksli birincil anahtar araması gider — maliyet sayfa boyutuyla orantılıdır, tablo boyutuyla değil. Skor **yazma** yolu ise Postgres'e hiç dokunmaz.
