@@ -45,4 +45,17 @@ export class LeaderboardQueryDto {
     message: 'seasonId biçimi YYYY-Www olmalıdır, ör. 2026-W34',
   })
   seasonId?: string;
+
+  /**
+   * Verilirse sıralama o ülkeyle SINIRLANIR (global tablo yerine ülke
+   * tablosu okunur). Ayrı bir Redis ZSET olduğu için maliyeti global
+   * sorguyla aynıdır — global tabloyu çekip filtrelemek 2M üyede tüm
+   * sıralamayı taramak demek olurdu.
+   */
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z]{2}$/, {
+    message: 'country ISO 3166-1 alpha-2 olmalıdır, ör. TR',
+  })
+  country?: string;
 }

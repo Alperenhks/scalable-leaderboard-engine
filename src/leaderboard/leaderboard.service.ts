@@ -16,6 +16,8 @@ export interface LeaderboardEntry {
 
 export interface LeaderboardPage {
   seasonId: string;
+  /** Ülke sıralaması sorgulandıysa ISO kodu, global sorguda null. */
+  country: string | null;
   total: number;
   limit: number;
   offset: number;
@@ -33,6 +35,8 @@ export interface SubmitScoreResult {
 
 export interface AroundLeaderboard {
   seasonId: string;
+  /** Ülke sıralaması sorgulandıysa ISO kodu, global sorguda null. */
+  country: string | null;
   userId: string;
   rank: number | null;
   score: number;
@@ -124,6 +128,34 @@ export class LeaderboardService {
   }
 
   /**
+   * Ülke bazlı sıralama anahtarı.
+   *
+   * Global tablodan ayrı bir ZSET tutulur; alternatif olan "global tabloyu
+   * çekip ülkeye göre filtrele" yaklaşımı 2M üyede tüm sıralamayı taramak
+   * demek olurdu. Ayrı ZSET ile ülke sorgusu da global sorgu kadar hızlıdır:
+   * ZREVRANGE/ZREVRANK aynı O(log N + M) maliyetiyle çalışır.
+   *
+   * Ülke kodu ISO 3166-1 alpha-2'dir ve şemada `Char(2)` ile sınırlıdır;
+   * anahtar adına doğrudan girmesi güvenlidir.
+   */
+  private countryKey(seasonId: string, country: string): string {
+    return `lb:${seasonId}:c:${country}`;
+  }
+
+  /**
+   * Sorgunun hangi sıralamaya gideceğini seçer.
+   *
+   * `country` verilmişse ülke tablosu, verilmemişse global tablo. Okuma
+   * yolundaki tüm metotlar bu tek noktadan geçtiği için ülke desteği her
+   * uçta aynı biçimde ve aynı maliyetle çalışır.
+   */
+  private scopedKey(seasonId: string, country?: string | null): string {
+    return country
+      ? this.countryKey(seasonId, country.toUpperCase())
+      : this.key(seasonId);
+  }
+
+  /**
    * Skor gönderimi. İşlem iki depoya yayılır ve aralarında ortak transaction
    * yoktur — gerçek dağıtık atomiklik mümkün değildir. Bu yüzden hata yönü
    * bilinçli seçilir: önce Redis, sonra Mongo.
@@ -156,13 +188,24 @@ export class LeaderboardService {
     }
 
     // 2) ZINCRBY atomiktir ve yeni toplamı döndürür — ayrıca ZSCORE gerekmez.
-    //    Havuz katkısı aynı pipeline'da gider: iki ayrı gidiş-dönüş olmaz.
+    //    Havuz katkısı ve ülke sıralaması aynı pipeline'da gider: üç yazma
+    //    tek gidiş-dönüşte tamamlanır.
     const key = this.key(seasonId);
     const poolContribution = this.poolContributionMinor(delta);
+
+    // Ülke, profil cache'inden okunur — yazma yolu Postgres'e dokunmaz.
+    // Cache boşsa ülke ZSET'i bu istekte atlanır: global sıralama her zaman
+    // doğrudur ve ülke tablosu bir sonraki yazımda kendini toparlar. Yazma
+    // yolunun gecikmesini artırmamak, ülke tablosunun anlık kesinliğinden
+    // daha önemlidir.
+    const country = await this.cachedCountry(userId);
 
     const pipeline = this.redis.pipeline().zincrby(key, delta, userId);
     if (poolContribution > 0) {
       pipeline.incrby(this.poolKey(seasonId), poolContribution);
+    }
+    if (country) {
+      pipeline.zincrby(this.countryKey(seasonId, country), delta, userId);
     }
     const results = await pipeline.exec();
     const totalScore = Number(results?.[0]?.[1] ?? 0);
@@ -232,11 +275,18 @@ export class LeaderboardService {
   ): Promise<void> {
     const poolContribution = this.poolContributionMinor(delta);
     try {
+      // Ülke ZSET'i de geri alınır: yalnızca globali düzeltmek, ülke
+      // sıralamasında çift sayım bırakırdı.
+      const country = await this.cachedCountry(userId);
+
       const pipeline = this.redis
         .pipeline()
         .zincrby(this.key(seasonId), -delta, userId);
       if (poolContribution > 0) {
         pipeline.decrby(this.poolKey(seasonId), poolContribution);
+      }
+      if (country) {
+        pipeline.zincrby(this.countryKey(seasonId, country), -delta, userId);
       }
       await pipeline.exec();
     } catch (error) {
@@ -245,6 +295,26 @@ export class LeaderboardService {
           error instanceof Error ? error.message : String(error)
         }`,
       );
+    }
+  }
+
+  /**
+   * Oyuncunun ülkesini YALNIZCA cache'ten okur.
+   *
+   * Postgres'e bilinçli olarak düşülmez: skor gönderimi bu mimarinin en sıcak
+   * yoludur ve oraya bir veritabanı turu eklemek, kaçınılan yükü geri
+   * getirirdi. Cache boşsa ülke ZSET'i o istekte atlanır — oyuncu liderlik
+   * tablosunda bir kez göründüğünde profil cache'i dolar ve sonraki
+   * yazımlarda ülke sıralaması da işler.
+   */
+  private async cachedCountry(userId: string): Promise<string | null> {
+    try {
+      const raw = await this.redis.get(this.profileKey(userId));
+      if (!raw) return null;
+      return (JSON.parse(raw) as UserProfile).country;
+    } catch {
+      // Bozuk cache kaydı skor yazımını engellemesin.
+      return null;
     }
   }
 
@@ -274,6 +344,23 @@ export class LeaderboardService {
    */
   async resetSeason(seasonId: string): Promise<void> {
     await this.redis.del(this.key(seasonId), this.poolKey(seasonId));
+
+    // Ülke tabloları da silinmelidir; kalırlarsa yeni sezon eski skorlarla
+    // başlar. Anahtarlar SCAN ile taranır — KEYS tek iş parçacıklı Redis'i
+    // tüm filo için bloklardı ve bu, üretimde kaçınılan bir komuttur.
+    const pattern = `${this.key(seasonId)}:c:*`;
+    let cursor = '0';
+    do {
+      const [next, found] = await this.redis.scan(
+        cursor,
+        'MATCH',
+        pattern,
+        'COUNT',
+        200,
+      );
+      cursor = next;
+      if (found.length > 0) await this.redis.del(...found);
+    } while (cursor !== '0');
   }
 
   /** Dağıtım için ilk N oyuncuyu skorlarıyla verir. */
@@ -299,13 +386,15 @@ export class LeaderboardService {
   async getUserRank(
     userId: string,
     seasonId: string,
+    country?: string | null,
   ): Promise<{
     userId: string;
     seasonId: string;
+    country: string | null;
     rank: number | null;
     score: number;
   }> {
-    const key = this.key(seasonId);
+    const key = this.scopedKey(seasonId, country);
     const results = await this.redis
       .pipeline()
       .zrevrank(key, userId)
@@ -318,6 +407,7 @@ export class LeaderboardService {
     return {
       userId,
       seasonId,
+      country: country ? country.toUpperCase() : null,
       rank: rank === null ? null : rank + 1,
       score: score === null ? 0 : Number(score),
     };
@@ -332,8 +422,11 @@ export class LeaderboardService {
   }
 
   /** ZCARD O(1)'dir; istemci sayfalama arayüzü için toplam sayı verir. */
-  async getPlayerCount(seasonId: string): Promise<number> {
-    return this.redis.zcard(this.key(seasonId));
+  async getPlayerCount(
+    seasonId: string,
+    country?: string | null,
+  ): Promise<number> {
+    return this.redis.zcard(this.scopedKey(seasonId, country));
   }
 
   /**
@@ -385,17 +478,31 @@ export class LeaderboardService {
     seasonId: string,
     limit: number,
     offset: number,
+    country?: string | null,
   ): Promise<LeaderboardPage> {
-    const key = this.key(seasonId);
+    const key = this.scopedKey(seasonId, country);
 
-    const [flat, total] = await Promise.all([
-      this.redis.zrevrange(key, offset, offset + limit - 1, 'WITHSCORES'),
-      this.getPlayerCount(seasonId),
-    ]);
+    // Sayfa ve toplam sayı TEK pipeline'da alınır: iki ayrı gidiş-dönüş,
+    // bu mimaride ölçülen sürenin neredeyse tamamını oluşturuyordu.
+    const results = await this.redis
+      .pipeline()
+      .zrevrange(key, offset, offset + limit - 1, 'WITHSCORES')
+      .zcard(key)
+      .exec();
+
+    const flat = (results?.[0]?.[1] ?? []) as string[];
+    const total = (results?.[1]?.[1] ?? 0) as number;
 
     const entries = await this.enrich(this.parseRange(flat, offset));
 
-    return { seasonId, total, limit, offset, entries };
+    return {
+      seasonId,
+      country: country ? country.toUpperCase() : null,
+      total,
+      limit,
+      offset,
+      entries,
+    };
   }
 
   /**
@@ -413,20 +520,30 @@ export class LeaderboardService {
     userId: string,
     seasonId: string,
     limit = TOP_WINDOW_SIZE,
+    country?: string | null,
   ): Promise<AroundLeaderboard> {
-    const key = this.key(seasonId);
+    const key = this.scopedKey(seasonId, country);
+    const scope = country ? country.toUpperCase() : null;
 
-    const [rawRank, rawScore, total] = await Promise.all([
-      this.redis.zrevrank(key, userId),
-      this.redis.zscore(key, userId),
-      this.getPlayerCount(seasonId),
-    ]);
+    // Sıra, skor ve toplam sayı TEK pipeline'da: üç ayrı gidiş-dönüş yerine
+    // bir tur. Bu yolun tamamı Redis'tir, Postgres'e hiç uğramaz.
+    const head = await this.redis
+      .pipeline()
+      .zrevrank(key, userId)
+      .zscore(key, userId)
+      .zcard(key)
+      .exec();
+
+    const rawRank = head?.[0]?.[1] as number | null;
+    const rawScore = head?.[1]?.[1] as string | null;
+    const total = (head?.[2]?.[1] ?? 0) as number;
 
     // Oyuncu bu sezon hiç skor göndermemiş: pencere yok, tablonun başı verilir.
-    if (rawRank === null) {
-      const head = await this.getTopPlayers(seasonId, limit, 0);
+    if (rawRank === null || rawRank === undefined) {
+      const top = await this.getTopPlayers(seasonId, limit, 0, country);
       return {
         seasonId,
+        country: scope,
         userId,
         rank: null,
         score: 0,
@@ -435,7 +552,7 @@ export class LeaderboardService {
         // Sırası olmayan oyuncunun komşusu da yoktur — boş dizi döner ve
         // frontend "henüz sıralamada değilsin" ekranını gösterir.
         neighbours: [],
-        entries: head.entries.map((e) => ({ ...e, isCurrentUser: false })),
+        entries: top.entries.map((e) => ({ ...e, isCurrentUser: false })),
       };
     }
 
@@ -476,6 +593,7 @@ export class LeaderboardService {
 
     return {
       seasonId,
+      country: scope,
       userId,
       rank,
       score: rawScore === null ? 0 : Number(rawScore),

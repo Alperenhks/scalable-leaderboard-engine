@@ -44,6 +44,7 @@ export class LeaderboardController {
       query.seasonId ?? getCurrentSeasonId(),
       query.limit,
       query.offset,
+      query.country,
     );
   }
 
@@ -64,6 +65,7 @@ export class LeaderboardController {
       userId,
       query.seasonId ?? getCurrentSeasonId(),
       query.limit,
+      query.country,
     );
   }
 

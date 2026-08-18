@@ -146,7 +146,7 @@ async function main(): Promise<void> {
 
     const allPlayers = await prisma.user.findMany({
       where: { username: { in: usernames } },
-      select: { id: true, username: true },
+      select: { id: true, username: true, country: true },
     });
     console.log(`\r  ${allPlayers.length} oyuncu hazır.          \n`);
 
@@ -175,13 +175,64 @@ async function main(): Promise<void> {
 
     const key = `lb:${seasonId}`;
     await redis.del(key, `pool:${seasonId}`);
+
+    // Önceki çalıştırmadan kalan ülke tabloları temizlenir; kalırlarsa
+    // yeni skorlarla karışır. SCAN kullanılır — KEYS tek iş parçacıklı
+    // Redis'i bloklar.
+    let cursor = '0';
+    do {
+      const [next, found] = await redis.scan(
+        cursor,
+        'MATCH',
+        `${key}:c:*`,
+        'COUNT',
+        200,
+      );
+      cursor = next;
+      if (found.length > 0) await redis.del(...found);
+    } while (cursor !== '0');
+
     // ZADD'i parçalara böl: tek komutta 5.000 üye Upstash istek sınırını zorlar.
     for (let i = 0; i < zsetArgs.length; i += 2 * CHUNK) {
       await redis.zadd(key, ...zsetArgs.slice(i, i + 2 * CHUNK));
     }
+
+    // Ülke tabloları: her ülke için ayrı ZSET. Uygulama da skor yazarken
+    // aynı anahtarı besler, dolayısıyla seed ile üretim aynı yapıyı kurar.
+    const byCountry = new Map<string, (string | number)[]>();
+    for (const p of scored) {
+      if (!p.country) continue;
+      const cc = p.country.toUpperCase();
+      const list = byCountry.get(cc) ?? [];
+      list.push(p.score, p.id);
+      byCountry.set(cc, list);
+    }
+    for (const [cc, args] of byCountry) {
+      for (let i = 0; i < args.length; i += 2 * CHUNK) {
+        await redis.zadd(`${key}:c:${cc}`, ...args.slice(i, i + 2 * CHUNK));
+      }
+    }
+
+    // Profil cache'i (ad + ülke) önden doldurulur. Uygulama bunu ilk okumada
+    // kendisi kurar, ama seed'den doldurmak jürinin ilk isteğini de hızlı
+    // yapar — ayrıca skor yazma yolu ülkeyi buradan okur.
+    const profilePipeline = redis.pipeline();
+    for (const p of allPlayers) {
+      profilePipeline.set(
+        `profile:${p.id}`,
+        JSON.stringify({ username: p.username, country: p.country }),
+        'EX',
+        86_400,
+      );
+    }
+    await profilePipeline.exec();
+
     await redis.set(`pool:${seasonId}`, poolMinor);
     console.log(
-      `  ${scored.length} skor + havuz ${(poolMinor / 100).toFixed(2)} yazıldı.\n`,
+      `  ${scored.length} skor + havuz ${(poolMinor / 100).toFixed(2)} yazıldı.`,
+    );
+    console.log(
+      `  ${byCountry.size} ülke tablosu + ${allPlayers.length} profil cache'lendi.\n`,
     );
 
     // ---- 3) Mongo: skor event örneklemi --------------------------------
