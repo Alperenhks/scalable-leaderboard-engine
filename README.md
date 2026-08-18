@@ -42,41 +42,11 @@ Hiçbir servis yerel makineye bağlı değildir; üç veri deposu da yönetilen 
 
 Bağlantı bilgilerinin hiçbiri koda gömülü değildir; tümü `.env` üzerinden okunur ve açılışta Joi ile doğrulanır.
 
-### Soğuk başlangıç ve nasıl çözüldüğü
+### Soğuk başlangıç
 
-Backend, Render'ın **ücretsiz** planında çalışır ve bu planın bilinen bir davranışı vardır: 15 dakika istek almayan servis uykuya alınır, sonraki ilk istek konteyner ayağa kalkarken **~50 saniye** bekler.
+Render'ın ücretsiz planı 15 dakika istek almayan servisi uykuya alır ve uyanma ~50 saniye sürer. Bu bir uygulama sorunu değil, planın davranışıdır — servis uyanıkken ölçülen yanıt süresi 75-80 ms'dir.
 
-Bu bir uygulama sorunu değildi — servis uyanıkken ölçülen yanıt süresi 75-80 ms'dir (bkz. [Performans](#performans--ölçülmüş)) — ama projeyi ilk kez açan biri için **ilk izlenim tam olarak o 50 saniyedir.** Teknik olarak açıklanabilir olması, deneyimi düzeltmez.
-
-**Çözüm:** Servise düzenli aralıklarla istek atılır; Render'ın boştalık sayacı hiçbir zaman 15 dakikaya ulaşmaz.
-
-Ping **iki katmanlıdır** ve bu, ölçüm sonucu böyle kurgulandı:
-
-| Katman | Araç | Aralık | Rolü |
-| --- | --- | --- | --- |
-| **Birincil** | [cron-job.org](https://cron-job.org) | 5 dk | Garantili tetikleme |
-| **Yedek** | GitHub Actions (`.github/workflows/keep-alive.yml`) | `*/5` | Birincil durursa devreye girer |
-
-İlk kurulumda yalnızca GitHub Actions kullanıldı ve `*/10` tanımlandı. Ölçüm bunun yetersiz olduğunu gösterdi — **gerçek tetikleme aralıkları 19-32 dakika** arasında değişti:
-
-```
-#2  22:57   #3  23:16  (+19 dk)   #4  23:41  (+25 dk)
-#5  00:00   (+19 dk)   #6  00:32  (+32 dk)
-```
-
-Sebep, GitHub Actions'ın `schedule` tetikleyicisinin **garanti vermemesidir**: yoğunlukta cron'lar ertelenir, hatta atlanır. 15 dakikalık eşik düzenli olarak aşıldığı için servis uyumaya devam ediyordu. Bu yüzden birincil ping, tetiklemeyi garanti eden harici bir zamanlayıcıya taşındı; Actions ise ikinci savunma hattı olarak bırakıldı.
-
-| Karar | Gerekçe |
-| --- | --- |
-| **5 dk** aralık | 15 dakikalık eşiğe üç katlı pay bırakır; bir tetikleme kaçsa bile sonraki pencereye düşer. |
-| **`/` ucu** | Hiçbir veri deposuna dokunmaz. `/api/leaderboard` pinglemek Redis ve Postgres'te günde 288 gereksiz tur demek olurdu. |
-| **Kota güvenli** | Render ayda 750 saat verir, bir ay en fazla 744 saattir — tek servis kesintisiz uyanık dursa bile limit aşılmaz. |
-
-Ücretli plana geçildiğinde bu workflow gereksizleşir ve silinebilir; **kodda hiçbir değişiklik gerekmez** — uyku, planın bir özelliğidir, uygulamanın değil.
-
-#### Arayüz tarafındaki karşılığı
-
-Frontend yine de bu duruma karşı dayanıklı yazılmıştır: veriler gelene kadar iskelet (skeleton) ekranı gösterir ve bekleme uzarsa "sunucu uyandırılıyor" mesajına geçer. Ping mekanizması bir sebeple durursa bile boş ekranla karşılaşılmaz.
+Servis, 5 dakikada bir sağlık ucuna istek atan bir zamanlayıcıyla (cron-job.org, yedeği `.github/workflows/keep-alive.yml`) sürekli uyanık tutulur. Ping `/` ucuna gider; hiçbir veri deposuna dokunmaz.
 
 ---
 
@@ -121,36 +91,18 @@ Express yerine Fastify adapter kullanılır. İstek başına daha düşük overh
 
 ## Kurulum
 
-### 1. Depoyu klonlayın
-
 ```bash
-git clone <repo-url>
-cd scalable-leaderboard-engine
+git clone <repo-url> && cd scalable-leaderboard-engine
+
+docker compose up -d        # Postgres + Redis + Mongo (healthcheck'li)
+cp .env.example .env        # doldurun — aşağıdaki yerel değerler compose ile uyumlu
+npm install
+npx prisma db push          # şemayı uygula
+npm run seed                # 5.000 oyuncu (~30 sn)
+npm run start:dev           # http://localhost:8080
 ```
 
-### 2. Veritabanlarını başlatın
-
-Üç veritabanı da Docker Compose ile gelir; ayrıca kurulum gerekmez.
-
-```bash
-docker compose up -d
-```
-
-Tüm servislerde **healthcheck** tanımlıdır. Servislerin gerçekten hazır olduğunu görmek için:
-
-```bash
-docker compose ps
-```
-
-Üç servisin de `healthy` durumuna gelmesini bekleyin (ilk açılışta Mongo ~20 sn sürebilir).
-
-### 3. Ortam değişkenlerini ayarlayın
-
-```bash
-cp .env.example .env
-```
-
-`.env` dosyasını doldurun. `docker-compose.yml` ile uyumlu yerel değerler:
+`.env` için yerel değerler:
 
 ```env
 DATABASE_URL=postgresql://leaderboard:leaderboard@localhost:5432/leaderboard?schema=public
@@ -160,55 +112,18 @@ JWT_SECRET=<en az 16 karakterlik rastgele bir dize>
 PORT=8080
 ```
 
-> Hiçbir bağlantı bilgisi koda gömülü değildir. Tüm servisler bu değerleri `process.env` üzerinden okur ve uygulama açılışında doğrular — eksik bir değişken varsa sunucu anlaşılır bir hatayla durur, ilk istekte çökmez.
+Hiçbir bağlantı bilgisi koda gömülü değildir; hepsi `process.env`'den okunur ve açılışta Joi ile doğrulanır — eksik bir değişken varsa sunucu anlaşılır bir hatayla durur, ilk istekte çökmez.
 
-### 4. Bağımlılıkları kurun
+**Seed** üç veri deposuna birden yazar ve veri bilinçli olarak gerçekçidir: skor dağılımı üsteldir (düz rastgele değil), oyuncuların %1'i sıralama dışı bırakılır (`rank: null` senaryosu için) ve rastgelelik deterministiktir — aynı komut her çalıştığında aynı tabloyu üretir. `--players 50000` ile ölçek büyütülür, `--reset` mevcut veriyi temizler.
 
-```bash
-npm install
-```
+<details>
+<summary><b>Üretim notları</b> — Neon pooler ve migration</summary>
 
-### 5. Veritabanı şemasını uygulayın
+`DATABASE_URL` Neon'un **pooler** (PgBouncer) endpoint'ine işaret etmelidir (host adında `-pooler` geçer). Ölçüldü: 400 eş zamanlı bağlantı denemesinde pooler 179 bağlantı kabul ederken direct endpoint **hiçbirini** kabul edemedi (0/400). Yatayda çoğaltılmış her instance kendi `pg.Pool`'unu tuttuğu için bu fark üretim ölçeğinde belirleyicidir. Uzun süren migration'larda `-pooler` ekini geçici olarak kaldırın; DDL için direct endpoint daha güvenlidir.
 
-```bash
-npx prisma db push
-```
+`db push` şemayı doğrudan uygular ve migration geçmişi bırakmaz — hızlı kurulum için uygundur. Gerçek bir dağıtımdan önce `npx prisma migrate dev` ile sürümlenmiş migration'lara geçilmelidir.
 
-> `db push` şemayı doğrudan uygular ve migration geçmişi bırakmaz — hızlı kurulum
-> ve geliştirme için uygundur. Gerçek bir dağıtımdan önce `npx prisma migrate dev`
-> ile sürümlenmiş migration'lara geçilmelidir.
-
-#### Neon kullanıyorsanız: pooler endpoint'i
-
-`DATABASE_URL` Neon'un **pooler** (PgBouncer) endpoint'ine işaret etmelidir — host adında `-pooler` geçer.
-
-Sebep ölçümle doğrulandı: 400 eş zamanlı bağlantı denemesinde **pooler 179 bağlantı kabul ederken direct endpoint hiçbirini kabul edemedi (0/400).** Yatayda çoğaltılmış her instance kendi `pg.Pool`'unu tuttuğu için bu fark üretim ölçeğinde belirleyicidir.
-
-> Uzun süren migration'larda sorun yaşarsanız `-pooler` ekini geçici olarak kaldırın; DDL için direct endpoint daha güvenlidir.
-
-### 6. Örnek veriyi yükleyin
-
-```bash
-npm run seed                      # 5.000 oyuncu (~30 sn)
-npm run seed -- --players 50000   # daha büyük ölçek
-npm run seed -- --reset           # önce mevcut örnek veriyi temizler
-```
-
-Seed üç veri deposunun **hepsine** yazar: Postgres'e oyuncu kimlikleri, Redis'e canlı sıralama ve ödül havuzu, Mongo'ya temsili event log'ları.
-
-Üretilen veri bilinçli olarak gerçekçidir:
-
-- **Skor dağılımı üsteldir** — az sayıda çok yüksek skorlu oyuncu, geniş bir orta kitle, uzun bir kuyruk. Düz rastgele dağılım tabloyu yapay gösterirdi.
-- **Oyuncuların %1'i sıralama dışı bırakılır** — "bu hafta hiç oynamamış oyuncu" (`rank: null`) senaryosu ancak böyle test edilebilir. Herkese skor verilseydi bu kod yolu hiç görünmezdi.
-- **Rastgelelik deterministiktir** (sabit tohumlu mulberry32) — aynı komut her çalıştığında aynı tabloyu üretir, hata bildirimi tekrarlanabilir olur.
-
-### 7. Sunucuyu başlatın
-
-```bash
-npm run start:dev
-```
-
-Sunucu `http://localhost:8080` adresinde çalışır.
+</details>
 
 ---
 
@@ -232,23 +147,15 @@ curl -X POST $BASE/auth/identify -H 'Content-Type: application/json' -d '{}'
 
 Doğrulama tamamen bellekte yapılır: `JWT_SECRET` ile HMAC imza kontrolü. Ne Postgres'e ne Redis'e sorgu gider — 2M DAU'da her istekte bir kullanıcı sorgusu, bu mimarinin kaçındığı yükü geri getirirdi. Ölçüldü: doğrulama başına **22 mikrosaniye**.
 
-Kimlik token'ın `sub` alanından okunur; gövdeden `userId` kabul edilmez. Roller de (`player` / `admin`) token içinde taşınır, veritabanında tutulmaz.
+Kimlik token'ın `sub` alanından okunur; gövdeden `userId` kabul edilmez — aksi halde herkes başkası adına skor gönderebilirdi.
 
-`JwtAuthGuard` *"kimsin?"* sorusunu yanıtlar (**401**). Rol tabanlı bir yetki katmanı bilinçli olarak **yoktur**: case bir yetkilendirme sistemi istemiyor ve korunması gereken bir uç bulunmuyor — haftalık ödül dağıtımı cron ile otomatik çalışır. Kullanılmayan bir RBAC altyapısı taşımak yerine kaldırıldı.
+Rol tabanlı bir yetki katmanı bilinçli olarak **yoktur**: case bir yetkilendirme sistemi istemiyor ve korunması gereken bir uç bulunmuyor (haftalık dağıtım cron ile otomatik çalışır). Kullanılmayan bir RBAC altyapısı taşımak yerine kaldırıldı.
 
 ### CORS
 
-`localhost:3000` (Next.js), `localhost:5173` (Vite), bunların `127.0.0.1` karşılıkları ve tüm `*.vercel.app` alan adları kabul edilir; `credentials: true` açıktır.
+Varsayılan olarak yerel portlar ve `*.vercel.app` adresleri kabul edilir — Vercel her deploy için yeni bir preview alan adı ürettiği için tek tek listelemek pratik değildir.
 
-Vercel her deploy için farklı bir preview alan adı ürettiğinden tek tek listelemek her dağıtımda kod değişikliği gerektirirdi; regex bu yükü kaldırır. Fastify adapter'da CORS `@fastify/cors` üzerinden işlenir, regex desteği oradan gelir.
-
-**Üretimde daraltma:** `ALLOWED_ORIGINS` ortam değişkeni (virgülle ayrılmış liste) tanımlanırsa yalnızca o adresler kabul edilir ve yukarıdaki varsayılan devre dışı kalır:
-
-```bash
-ALLOWED_ORIGINS=https://scalable-leaderboard-client.vercel.app
-```
-
-> Bu ayar gerçek bir dağıtımda **verilmelidir.** `credentials: true` ile regex origin birlikte kullanıldığında `*.vercel.app` altındaki herhangi bir site kimlik bilgisi taşıyan istek atabilir; varsayılan yalnızca geliştirme ve değerlendirme kolaylığı içindir.
+Üretimde `ALLOWED_ORIGINS` (virgülle ayrılmış) verilmelidir; tanımlıysa yalnızca o adresler kabul edilir. Varsayılan `credentials: true` ile birlikte herhangi bir Vercel sitesinin kimlik taşıyan istek atmasına izin verir, yani yalnızca geliştirme ve değerlendirme kolaylığı içindir.
 
 ### Uçlar
 
@@ -267,7 +174,7 @@ Tüm uçların tam sözleşmesi — istek/yanıt gövdeleri, doğrulama kurallar
 | `GET /api/rewards/season` | ➖ | Geri sayım, havuz, dağıtım oranları |
 | `GET /api/rewards/pool` | ➖ | Yalnızca havuz tutarı |
 | `GET /api/rewards/projection` | ➖/🔒 | Tahmini ödüller + kendi payı |
-| `POST /api/rewards/distribute` | 🔒 admin | Dağıtımı elle tetikler (yıkıcı) — cron zaten otomatik çalışır |
+| `POST /api/rewards/distribute` | ➖ | Dağıtımı elle tetikler (yıkıcı) — cron zaten otomatik çalışır |
 | `GET /api/me` | 🔒 | Sıra + skor + bakiye + son ödül |
 | `GET /api/me/wallet` | 🔒 | Cüzdan bakiyesi |
 | `GET /api/me/rewards` | 🔒 | Ödül geçmişi |
@@ -315,52 +222,40 @@ Canlı frontend'den (Vercel) canlı backend'e (Render) atılan açılış istekl
 
 > Bu tablo yük testi değil, tek kullanıcının gerçek deneyimidir. Aşağıdaki yük testleri ise sunucunun **tavanını** ölçer: 50-100 eşzamanlı bağlantı altında kuyruk oluşur ve gecikme doğal olarak şişer.
 
-### Eşzamanlılık altında davranış
+### Yük altında davranış
 
-![Ölçekleme](perf/charts/scaling.png)
+| | |
+|---|---|
+| ![Ölçekleme](perf/charts/scaling.png) | ![Uçlar](perf/charts/endpoints.png) |
 
-Verim ~117 RPS'te doygunluğa ulaşıyor ve gecikme oradan sonra lineer artıyor — klasik doygunluk eğrisi. Kırılma yok, hata yok: sistem aşırı yükte çökmüyor, sadece yavaşlıyor.
+Verim ~117 RPS'te doygunluğa ulaşır ve gecikme oradan sonra lineer artar — klasik doygunluk eğrisi. Kırılma yok, hata yok: sistem aşırı yükte çökmez, yavaşlar. Uç bazında ise yalnızca Redis'e giden uçlar (`season`, `rank`) en hızlısıdır; `me` Postgres'ten cüzdan okuduğu için en maliyetlisi.
 
-### Uç bazında verim
+### Maliyet neyle orantılı?
 
-![Uçlar](perf/charts/endpoints.png)
+| | |
+|---|---|
+| ![Sayfa boyutu](perf/charts/page-size.png) | ![Ülke sıralaması](perf/charts/country.png) |
 
-Yalnızca Redis'e giden uçlar (`season`, `rank`) beklendiği gibi en hızlısı. `leaderboard` ve `around` ek olarak ad çözümlemesi yapar; `me` ise Postgres'ten cüzdan ve ödül kaydı okuduğu için en maliyetli olanıdır.
+`limit` 10'dan 100'e çıkarken maliyet **10 kat değil ~1,4 kat** artıyor: sıralama Redis'te O(log N + M) ve Postgres'e yalnızca görünen sayfanın adları için tek sorgu gidiyor. Maliyet **sayfa boyutuyla** orantılı, tablo boyutuyla değil.
 
-### Sayfa boyutunun maliyeti
+Ülke sorgusu global sorgudan yavaş değil — her ülke kendi ZSET'inde indekslendiği için. "Global tabloyu çekip filtrele" yaklaşımı 2M üyede tüm sıralamayı taramak olurdu.
 
-![Sayfa boyutu](perf/charts/page-size.png)
+### Ölçüm → teşhis → düzeltme
 
-`limit` 10'dan 100'e çıkarken maliyet **10 kat değil ~1.4 kat** artıyor. Sıralama Redis'te O(log N + M) olduğu ve Postgres'e yalnızca görünen sayfanın adları için tek sorgu gittiği için maliyet sayfa boyutuyla orantılıdır, tablo boyutuyla değil.
-
-### Ülke sıralaması: ayrı indeks, filtre değil
-
-![Ülke sıralaması](perf/charts/country.png)
-
-Ülke sorgusu global sorgudan **yavaş değil, daha hızlı** — çünkü her ülke kendi Redis ZSET'inde indekslenir. "Global tabloyu çekip ülkeye göre ele" yaklaşımı 2M üyede tüm sıralamayı taramak demek olurdu; ayrı ZSET ile maliyet aynı O(log N + M) kalır ve küme küçüldüğü için bir tık daha iyi ölçülür.
-
-Yazma yolu da yavaşlamaz: ülke `ZINCRBY`'si mevcut pipeline'a eklenir (ek ağ turu yok) ve ülke bilgisi Postgres'ten değil profil cache'inden okunur.
-
-### Profil cache'i: ölçüm → teşhis → düzeltme
-
-İlk ölçümde `leaderboard` beklenenden yavaştı. Teşhis için her veri deposuna tek tek gecikme ölçüldü:
+İlk ölçümde `leaderboard` beklenenden yavaştı. Her veri deposuna tek tek bakıldı:
 
 | İşlem | Süre |
 |---|---|
-| Redis `ZREVRANGE` 100 üye | 62.9 ms |
-| Postgres `findMany` 100 ad | 68.2 ms |
-| Postgres **`SELECT 1`** | **57.0 ms** |
+| Redis `ZREVRANGE` 100 üye | 62,9 ms |
+| Postgres `findMany` 100 ad | 68,2 ms |
+| Postgres **`SELECT 1`** | **57,0 ms** |
 
-`SELECT 1` bile 57 ms sürüyordu — yani maliyet satır sayısından değil, **gidiş-dönüşün kendisinden** geliyordu. Kullanıcı adı ve ülke ise pratikte hiç değişmeyen veriler.
+`SELECT 1` bile 57 ms sürüyordu — maliyet satır sayısından değil **gidiş-dönüşün kendisinden** geliyordu. Kullanıcı adı ve ülke ise pratikte hiç değişmeyen veriler; Redis'te cache'lendi (24 saat TTL) ve `around` ucundaki iki arama tek pipeline'da birleştirildi:
 
-Çözüm: profiller Redis'te cache'lenir (24 saat TTL) ve `around` ucundaki iki ayrı arama tek pipeline'da birleştirilir.
-
-| Uç | Önce | Sonra | Kazanç |
-|---|---|---|---|
-| `leaderboard?limit=100` | 66 RPS | **117 RPS** | +77% |
-| `around` | 77 RPS | **153 RPS** | +99% |
-
-TTL sonsuz değildir: bir ad değişikliği en geç bir gün içinde yansır.
+| Uç | Önce | Sonra |
+|---|---|---|
+| `leaderboard?limit=100` | 66 RPS | **117 RPS** (+77%) |
+| `around` | 77 RPS | **153 RPS** (+99%) |
 
 ### 2M DAU için ne gerekir?
 
@@ -400,25 +295,11 @@ Negatif delta (ceza/düzeltme) havuzu **küçültmez**: bir oyuncuya kesilen cez
 | 1. | %20 |
 | 2. | %15 |
 | 3. | %10 |
-| 4–100 | kalan %55, **skorlarıyla orantılı** |
+| 4–100 | kalan %55, **sıralarına orantılı** |
 
-#### "based on their rank" ifadesinin yorumu
+4-100 aralığında ağırlık sıradan türetilir (`REWARDED_PLAYER_COUNT + 1 - rank`); skor hesaba girmez. Case'in ifadesi bunu gerektiriyor: *"distributed among players ranked 4th through 100th, **based on their rank**"*.
 
-Case metni 4-100 aralığı için *"distributed among players ranked 4th through 100th, **based on their rank**"* diyor. İfade skoru değil **sırayı** işaret ediyor ve uygulama birebir bunu yapıyor: ağırlık `REWARDED_PLAYER_COUNT + 1 - rank` ile sıradan türetilir, skor hesaba hiç girmez.
-
-Skora oranlı bir dağıtım da denendi ve **ölçülerek reddedildi.** Gerekçe teorik değil, canlı veriden:
-
-| | Skora oranlı | Sıraya oranlı (seçilen) |
-| --- | --- | --- |
-| 4. sıranın payı | ₺585.957 | ₺1.055.313 |
-| 100. sıranın payı | ₺497.536 | ₺10.880 |
-| **4. / 100. oranı** | **1,2x** | **97x** |
-
-Sorun şu: ilk 100'e girenlerin skorları birbirine çok yakın (canlı veride en yüksek 4.434.015, en düşük 3.764.923 — yalnızca **1,18 kat** fark). Skora oranlı dağıtımda bu yakınlık ödüllere de yansıyor ve 4. sıradaki oyuncu 100. sıradakinden yalnızca **%18** fazla alıyor. Yani sıralamanın 4-100 aralığında pratik bir karşılığı kalmıyor — oysa rekabetçi bir liderlik tablosunda ödülün asıl işlevi tam olarak bu farkı görünür kılmak.
-
-Sıra tabanlı ağırlıkta pay doğrusal azalır: 4. sıra en yüksek, 100. sıra en düşük payı alır ve aradaki her sıra bir öncekinden ölçülebilir biçimde daha azını alır.
-
-İlk üç sıra bu kuraldan bağımsızdır; onlar case'in verdiği sabit yüzdelerle (%20/%15/%10) ödüllendirilir.
+Skora oranlı bir dağıtım da denendi ve ölçülerek reddedildi: ilk 100'e girenlerin skorları birbirine çok yakın olduğu için (canlı veride 1,18 kat fark) ödüller de neredeyse eşitleniyordu — 4. sıra 100. sıradan yalnızca %18 fazla alıyordu. Sıra tabanlı ağırlıkta aynı fark **97 kata** çıkar ve sıralamanın 4-100 aralığında gerçek bir karşılığı olur.
 
 ### Para hassasiyeti
 
@@ -440,57 +321,33 @@ Kilit tek başına yeterli değildir: TTL dolması veya Redis'in yeniden başlam
 
 `RewardLog` kaydı ve `Wallet.balance` artışı **tek transaction**'da yazılır; ayrı yazılsalardı araya düşen bir hata, ödül kaydı olan ama parası ödenmemiş oyuncular bırakırdı. Redis ancak Postgres'e yazıldıktan **sonra** sıfırlanır — ters sırada dağıtım yarıda kalırsa sıralama ve havuz geri getirilemezdi.
 
-### Dağıtımı canlı görmek — değerlendirme için
+### Dağıtımı canlı denemek
 
-Haftalık dağıtım cron ile **otomatik** çalışır (Pazartesi 00:05 UTC), ancak
-projeyi inceleyen birinin sezonun bitmesini beklemesi anlamsız olurdu. Bu
-yüzden dağıtım elle de tetiklenebilir.
-
-Uç kimlik doğrulaması istemez; yıkıcılığı **idempotency** ile sınırlanır (aynı
-sezon ikinci kez dağıtılamaz).
+Dağıtım cron ile otomatik çalışır, ama sezonun bitmesini beklemeden elle de tetiklenebilir. Uç kimlik doğrulaması istemez; yıkıcılığı idempotency ile sınırlanır (aynı sezon ikinci kez dağıtılamaz, `409` döner).
 
 ```bash
 BASE=https://scalable-leaderboard-engine.onrender.com/api
 
-# 1) Dağıtım ÖNCESİ durum: havuz, sezon ve tahmini paylar
-curl -s "$BASE/rewards/season"     | jq '{sezon: .seasonId, havuz: .poolAmount, oyuncu: .playerCount}'
-curl -s "$BASE/rewards/projection" | jq '{havuz: .poolAmount, ilkUc: .entries[0:3]}'
-
-# 2) 1. sıradaki oyuncunun adını NOT ALIN — dağıtımdan sonra tablo boşalır
+# Önce: havuz ve 1. sıradaki oyuncu (adını not alın — tablo birazdan boşalacak)
+curl -s "$BASE/rewards/season" | jq '{sezon:.seasonId, havuz:.poolAmount, oyuncu:.playerCount}'
 curl -s "$BASE/leaderboard?limit=1" | jq -r '.entries[0].username'
 
-# 3) Dağıtımı tetikle — İÇİNDE BULUNULAN sezonu dağıtır (yıkıcıdır)
+# Dağıt
 curl -s -X POST "$BASE/rewards/distribute" -H 'Content-Type: application/json' \
   -d "{\"seasonId\":\"$(curl -s $BASE/rewards/season | jq -r .seasonId)\"}" | jq
 
-# 4) Dağıtım SONRASI: havuz ve sıralama sıfırlanmış olmalı
-curl -s "$BASE/rewards/season" | jq '{havuz: .poolAmount, oyuncu: .playerCount}'
+# Sonra: havuz ve sıralama sıfırlanmış olmalı
+curl -s "$BASE/rewards/season" | jq '{havuz:.poolAmount, oyuncu:.playerCount}'
 
-# 5) Kazanan oyuncunun cüzdanına para geçti mi? (2. adımdaki adı kullanın)
+# Kazananın cüzdanı
 TOKEN=$(curl -s -X POST $BASE/auth/identify -H 'Content-Type: application/json' \
-  -d '{"username":"<2. adımda not aldığınız ad>"}' | jq -r .token)
+  -d '{"username":"<not aldığınız ad>"}' | jq -r .token)
 curl -s "$BASE/me/rewards" -H "Authorization: Bearer $TOKEN" | jq
-curl -s "$BASE/me/wallet"  -H "Authorization: Bearer $TOKEN" | jq
 ```
 
-Beklenen: `rewards` dizisinde `rank: 1`, `status: "DISTRIBUTED"` bir kayıt ve
-cüzdan bakiyesinde havuzun %20'si.
+> **Yıkıcıdır:** sıralama ve havuz sıfırlanır, arayüzdeki tablo boşalır. Bu case'in *"both the pool and the leaderboard reset"* maddesinin beklenen davranışıdır. Veriyi geri getirmek için `npm run seed -- --reset`.
 
-> **Uyarı — bu işlem yıkıcıdır ve geri alınamaz.** Sezon dağıtıldıktan sonra
-> sıralama ve havuz sıfırlanır; **arayüzdeki tablo boşalır** ve `mode` ile
-> oyuncu seçen uçlar `404` döner (sıralamada kimse kalmadığı için).
->
-> Bu case'in 6. maddesinin (*"both the pool and the leaderboard reset to start
-> the new week"*) beklenen davranışıdır. Veriyi geri getirmek için depoyu
-> klonlayıp `npm run seed -- --reset` çalıştırın — 5.000 oyuncu ~30 saniyede
-> yeniden üretilir ve tablo dolar. Aynı sezon ikinci kez
-> dağıtılmak istenirse `409` döner — bu bir hata değil, idempotency güvencesinin
-> çalıştığının kanıtıdır.
-
-Dağıtımı tetiklemeden önce sonucunu görmek isterseniz `GET /api/rewards/projection`
-aynı hesap fonksiyonunu (`allocatePrizePool`) kullanarak "sezon şu an bitse kim ne
-kazanır" sorusunu yanıtlar — tahmin ile gerçek dağıtım arasında sapma olmaması
-için ikisi de tek kaynaktan hesaplanır.
+Tetiklemeden önce sonucu görmek için `GET /api/rewards/projection` — gerçek dağıtımla **aynı** fonksiyonu kullanır, dolayısıyla tahmin ile ödenen tutar ayrışmaz.
 
 ### Tutarlılık modeli
 
@@ -562,66 +419,28 @@ Bu depo yalnızca backend'i barındırır; kaynak kod ayrı bir alt klasöre gö
 ├── scripts/
 │   └── issue-token.js       # CLI'dan JWT üretici (HTTP alternatifi: /api/auth/identify)
 └── src/
-    ├── main.ts              # Fastify bootstrap + CORS
-    ├── app.module.ts        # Üç veri deposunun bağlandığı kök modül
-    │
-    ├── infrastructure/      # Veri deposu bağlantıları — iş kuralı içermez
-    │   ├── prisma/          #   PrismaService (global modül)
-    │   ├── redis/           #   Redis client + CacheService (global modül)
-    │   └── config/          #   .env doğrulama şeması (Joi)
-    │
+    ├── main.ts / app.module.ts
+    ├── infrastructure/      # Prisma, Redis, .env doğrulaması
     ├── leaderboard/         # Canlı sıralama — sistemin kalbi
-    │   ├── controllers/     #   HTTP uçları
-    │   ├── services/        #   ZSET işlemleri, profil cache'i
-    │   ├── dto/             #   İstek doğrulaması
-    │   └── tests/           #   getAround sınır durumları
-    │
-    ├── rewards/             # Ödül havuzu ve haftalık dağıtım
-    │   ├── controllers/
-    │   ├── services/        #   Dağıtım + projeksiyon
-    │   ├── schedulers/      #   Haftalık cron
-    │   ├── domain/          #   reward-math: saf iş kuralı, I/O yok
-    │   ├── dto/
-    │   └── tests/
-    │
-    ├── auth/                # Kimlik seçimi ve JWT doğrulaması
-    │   ├── controllers/
-    │   ├── services/
-    │   ├── guards/          #   JwtAuthGuard, OptionalJwtAuthGuard
-    │   ├── decorators/      #   @CurrentUser
-    │   ├── types/
-    │   ├── dto/
-    │   └── tests/
-    │
-    ├── players/             # Oyuncunun kendi verileri: cüzdan, ödül geçmişi
-    │   ├── controllers/
-    │   └── services/
-    │
-    ├── health/              # Liveness + readiness probe'ları
-    │   ├── controllers/
-    │   ├── services/
-    │   └── tests/
-    │
-    ├── events/              # Append-only skor event log'u (Mongo)
-    │   ├── services/
-    │   └── schemas/
-    │
-    └── common/              # Modüller arası paylaşılan kod
-        ├── utils/           #   Sezon (ISO hafta) hesabı
-        ├── decorators/      #   @IsSeasonId
-        ├── dto/
-        └── tests/
+    ├── rewards/             # Havuz, dağıtım, cron, ödül matematiği
+    ├── auth/                # JWT guard, kimlik seçimi
+    ├── players/             # Cüzdan, ödül geçmişi
+    ├── health/              # Liveness + readiness
+    ├── events/              # Skor event log'u (Mongo)
+    └── common/              # Sezon hesabı, paylaşılan decorator'lar
 ```
 
-Her özellik modülü kendi içinde aynı deseni izler: `controllers/` HTTP yüzeyi,
-`services/` iş mantığı, `dto/` girdi doğrulaması, `tests/` birim testleri.
-Bir modüle ilk kez bakan biri nereye bakacağını klasör adından bilir ve
-modülün tamamı tek bir klasörün altında kapalıdır.
+Her özellik modülü kendi içinde aynı deseni izler:
 
-`infrastructure/` bilinçli olarak ayrıdır: Prisma, Redis ve ortam değişkeni
-doğrulaması bir *özellik* değil, tüm özelliklerin üzerinde durduğu zemindir.
-Aynı şekilde `rewards/domain/` içindeki para matematiği hiçbir veri deposuna
-bağlı değildir — bu yüzden ayrı durur ve doğrudan test edilebilir.
+```
+leaderboard/
+├── controllers/   # HTTP yüzeyi
+├── services/      # iş mantığı
+├── dto/           # girdi doğrulaması
+└── tests/         # birim testleri
+```
+
+`infrastructure/` ayrıdır çünkü Prisma, Redis ve ortam doğrulaması bir *özellik* değil, tüm özelliklerin üzerinde durduğu zemindir. `rewards/domain/` içindeki para matematiği de hiçbir veri deposuna bağlı değildir — ayrı durur ve doğrudan test edilir.
 
 ---
 
