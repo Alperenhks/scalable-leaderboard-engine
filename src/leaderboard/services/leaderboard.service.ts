@@ -1,3 +1,24 @@
+/**
+ * Canlı liderlik tablosu — sistemin sıcak yolu.
+ *
+ * Bu dosyayı okurken geçerli olan dört kural:
+ *
+ *   1. **Sıralamanın otoritesi Redis Sorted Set'tir.** Postgres'e yalnızca
+ *      görünen sayfanın (≤100) adları için gidilir; sıralama ya da tarama
+ *      asla orada yapılmaz. Maliyet sayfa boyutuyla orantılıdır, tablo
+ *      boyutuyla değil.
+ *   2. **Yazma yolu Postgres'e hiç dokunmaz.** Skor gönderimi yalnızca Redis
+ *      ve Mongo görür; 2M DAU'da her tick'te transactional veritabanına
+ *      sorgu düşmemesi bu mimarinin varlık sebebidir.
+ *   3. **Her sıcak yol tek gidiş-dönüştür.** Çok komutlu işler `pipeline()`
+ *      ile birleştirilir. Ölçüm, maliyetin satır sayısından değil ağ turundan
+ *      geldiğini gösterdi: uzak Postgres'te `SELECT 1` bile 57 ms.
+ *   4. **`rank: null` asla `0`'a çevrilmez.** `ZREVRANK` 0-tabanlıdır, insan
+ *      sırası +1'dir; `0` döndürmek "birinci" demek olurdu.
+ *
+ * Araya bir RedisService katmanı konmadı — davranışı olmayan bir dolaylama
+ * olurdu; bu sınıfın kendisi zaten ZSET sarmalayıcısıdır.
+ */
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.module';
@@ -62,15 +83,9 @@ interface UserProfile {
 }
 
 /**
- * Profil cache ömrü (24 saat).
- *
- * Kullanıcı adı ve ülke pratikte hiç değişmez; buna karşılık her liderlik
- * tablosu isteği bu bilgi için Postgres'e gidiyordu. Ölçüm: uzak Postgres'e
- * tek gidiş-dönüş ~57 ms — `SELECT 1` bile aynı süreyi alıyordu, yani maliyet
- * satır sayısından değil ağ mesafesinden geliyordu. Cache bu adımı kaldırır
- * ve ölçülen verimi iki katına çıkarır (155 -> 309 RPS).
- *
- * TTL sonsuz değildir ki bir ad değişikliği en geç bir gün içinde yansısın.
+ * Profil cache ömrü. Ad ve ülke pratikte hiç değişmez; cache Postgres turunu
+ * kaldırıp verimi iki katına çıkardı (155 -> 309 RPS). TTL sonsuz değildir ki
+ * bir ad değişikliği en geç bir gün içinde yansısın.
  */
 const PROFILE_CACHE_TTL_SECONDS = 86_400;
 
@@ -81,13 +96,6 @@ export const TOP_WINDOW_SIZE = 100;
 export const NEIGHBOURS_ABOVE = 3;
 export const NEIGHBOURS_BELOW = 2;
 
-/**
- * Canlı liderlik tablosu.
- *
- * Sıralamanın otoritesi Redis Sorted Set'tir. Araya bir RedisService katmanı
- * konmadı — davranışı olmayan bir dolaylama olurdu; bu sınıfın kendisi zaten
- * ZSET sarmalayıcısıdır.
- */
 @Injectable()
 export class LeaderboardService {
   private readonly logger = new Logger(LeaderboardService.name);
@@ -99,23 +107,34 @@ export class LeaderboardService {
   ) {}
 
   /**
-   * Sezon başına ayrı anahtar: haftalık ödül job'ı donmuş bir anlık görüntüye
-   * ihtiyaç duyar. Tek global ZSET her hafta yıkıcı sıfırlama gerektirir ve
-   * geçmişi yok ederdi.
+   * Redis anahtar şeması.
    *
-   * Süslü parantez ({}) kullanılmaz — Redis Cluster ve Upstash'te hash-slot
-   * etiketi anlamına gelir, burada bir karşılığı yok.
+   *   lb:<sezon>            global sıralama (ZSET)
+   *   lb:<sezon>:c:<ÜLKE>   ülke sıralaması (ayrı ZSET)
+   *   pool:<sezon>          ödül havuzu, kuruş cinsinden tamsayı sayaç
+   *   profile:<userId>      ad + ülke cache'i
+   *
+   * Üç karar bu şemayı belirledi:
+   *
+   * **Sezon başına ayrı anahtar** — haftalık ödül job'ı donmuş bir anlık
+   * görüntüye ihtiyaç duyar. Tek global ZSET her hafta yıkıcı sıfırlama
+   * gerektirir ve geçmişi yok ederdi.
+   *
+   * **Ülke için ayrı ZSET** — "global tabloyu çekip filtrele" yaklaşımı 2M
+   * üyede tüm sıralamayı taramak demekti. Ayrı indeksle ülke sorgusu global
+   * sorguyla aynı O(log N + M) maliyetinde çalışır.
+   *
+   * **Havuz kuruş cinsinden tamsayı** — `INCRBY` yalnızca tamsayıyla
+   * atomiktir; `INCRBYFLOAT` ikili kayan nokta biriktirir ve haftada
+   * milyonlarca artışta havuz sapar.
+   *
+   * Anahtarlarda süslü parantez kullanılmaz: Redis Cluster ve Upstash'te
+   * hash-slot etiketi anlamına gelir, burada karşılığı yok.
    */
   private key(seasonId: string): string {
     return `lb:${seasonId}`;
   }
 
-  /**
-   * Sezonun ödül havuzu (kuruş cinsinden tamsayı sayaç).
-   *
-   * Kuruş tutulur çünkü INCRBY yalnızca tamsayı ile atomiktir; INCRBYFLOAT
-   * ikili kayan nokta biriktirir ve haftalık milyonlarca artışta havuz sapar.
-   */
   private poolKey(seasonId: string): string {
     return `pool:${seasonId}`;
   }
@@ -124,27 +143,13 @@ export class LeaderboardService {
     return `profile:${userId}`;
   }
 
-  /**
-   * Ülke bazlı sıralama anahtarı.
-   *
-   * Global tablodan ayrı bir ZSET tutulur; alternatif olan "global tabloyu
-   * çekip ülkeye göre filtrele" yaklaşımı 2M üyede tüm sıralamayı taramak
-   * demek olurdu. Ayrı ZSET ile ülke sorgusu da global sorgu kadar hızlıdır:
-   * ZREVRANGE/ZREVRANK aynı O(log N + M) maliyetiyle çalışır.
-   *
-   * Ülke kodu ISO 3166-1 alpha-2'dir ve şemada `Char(2)` ile sınırlıdır;
-   * anahtar adına doğrudan girmesi güvenlidir.
-   */
   private countryKey(seasonId: string, country: string): string {
     return `lb:${seasonId}:c:${country}`;
   }
 
   /**
-   * Sorgunun hangi sıralamaya gideceğini seçer.
-   *
-   * `country` verilmişse ülke tablosu, verilmemişse global tablo. Okuma
-   * yolundaki tüm metotlar bu tek noktadan geçtiği için ülke desteği her
-   * uçta aynı biçimde ve aynı maliyetle çalışır.
+   * Sorgunun hangi sıralamaya gideceğini seçer. Okuma yolundaki tüm metotlar
+   * buradan geçer, böylece ülke desteği her uçta aynı maliyetle çalışır.
    */
   private scopedKey(seasonId: string, country?: string | null): string {
     return country
@@ -190,11 +195,9 @@ export class LeaderboardService {
     const key = this.key(seasonId);
     const poolContribution = this.poolContributionMinor(delta);
 
-    // Ülke, profil cache'inden okunur — yazma yolu Postgres'e dokunmaz.
-    // Cache boşsa ülke ZSET'i bu istekte atlanır: global sıralama her zaman
-    // doğrudur ve ülke tablosu bir sonraki yazımda kendini toparlar. Yazma
-    // yolunun gecikmesini artırmamak, ülke tablosunun anlık kesinliğinden
-    // daha önemlidir.
+    // Ülke yalnızca cache'ten okunur; cache boşsa ülke ZSET'i bu istekte
+    // atlanır. Yazma yoluna Postgres turu eklememek, ülke tablosunun anlık
+    // kesinliğinden önemlidir — global sıralama her koşulda doğrudur.
     const country = await this.cachedCountry(userId);
 
     const pipeline = this.redis.pipeline().zincrby(key, delta, userId);

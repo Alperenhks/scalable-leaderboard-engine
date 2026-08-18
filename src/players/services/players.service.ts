@@ -1,3 +1,22 @@
+/**
+ * Oyuncunun kendine dair verileri: sıra, cüzdan, ödül geçmişi.
+ *
+ * Bu dosyanın tasarımını iki gözlem belirledi:
+ *
+ *   1. **Bakiye yalnızca haftalık ödül dağıtımında değişir.** Bu yüzden
+ *      cache'lenmeye en uygun veridir ve geçersiz kılma tek bir noktada
+ *      yapılır (`RewardsService`, dağıtım sonrası). TTL yalnızca o adım
+ *      kaçırılırsa verinin sonsuza dek eski kalmasını önler.
+ *   2. **Postgres'e giden uçlar eşzamanlılıkla ölçeklenmiyor.** Ölçüldü:
+ *      p50 76 ms -> 489 ms. Yalnızca Redis'e gidenler ölçekleniyordu. Açılış
+ *      ekranı her oyuncu tarafından çağrıldığı için bu uç Postgres'ten
+ *      tamamen kurtarıldı.
+ *
+ * Sonuç: `/me` sıcak yolda Postgres'e hiç dokunmaz; ad ve ülke liderlik
+ * tablosunun zaten doldurduğu profil cache'inden, bakiye ise buradaki
+ * hesap cache'inden gelir.
+ */
+
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { LeaderboardService } from '../../leaderboard/services/leaderboard.service';
@@ -7,14 +26,6 @@ import {
   minorUnitsToDecimalString,
 } from '../../rewards/domain/reward-math';
 
-/**
- * Cüzdan özeti cache ömrü.
- *
- * Bakiye YALNIZCA haftalık ödül dağıtımında değişir ve o an cache açıkça
- * geçersiz kılınır (`RewardsService`). TTL bu yüzden uzun tutulabilir; tek
- * işlevi, geçersiz kılma bir şekilde kaçırılırsa verinin sonsuza dek eski
- * kalmasını önlemektir.
- */
 const ACCOUNT_CACHE_TTL_SECONDS = 3_600;
 
 /**
@@ -41,14 +52,6 @@ interface CachedAccount {
   } | null;
 }
 
-/**
- * Oyuncunun kendine dair verilerini toplar.
- *
- * Para bilgisi Postgres'in otoritesindedir ama okuma yolu oraya her istekte
- * gitmez: ölçüm, Postgres'e giden uçların eşzamanlılıkla ölçeklenmediğini
- * (p50 76ms -> 489ms), yalnızca Redis'e gidenlerin ölçeklendiğini gösterdi.
- * Bakiye haftada bir değiştiği için cache'lenmeye en uygun veridir.
- */
 @Injectable()
 export class PlayersService {
   constructor(
@@ -87,11 +90,8 @@ export class PlayersService {
   }
 
   /**
-   * Cüzdan bakiyesi ve son ödül — önce cache, yoksa Postgres.
-   *
-   * Bu ikisi birlikte cache'lenir çünkü ikisi de yalnızca ödül dağıtımında
-   * değişir ve hep birlikte okunur. Ayrı ayrı tutmak iki Redis çağrısı
-   * demek olurdu.
+   * Cüzdan bakiyesi ve son ödül — önce cache, yoksa Postgres. İkisi birlikte
+   * tutulur çünkü hep birlikte okunur; ayırmak iki Redis çağrısı demekti.
    */
   private async getAccount(userId: string): Promise<CachedAccount> {
     const key = PlayersService.accountKey(userId);

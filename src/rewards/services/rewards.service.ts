@@ -1,3 +1,23 @@
+/**
+ * Haftalık ödül dağıtımı.
+ *
+ * İki kural bu dosyanın tamamını belirler:
+ *
+ * **1. Sıra değiştirilemez: Postgres önce, Redis sonra.**
+ * Ödül kaydı ve cüzdan artışı yazıldıktan SONRA sıralama sıfırlanır. Ters
+ * sırada dağıtım yarıda kalırsa sıralama ve havuz geri getirilemez — Redis'te
+ * silinmiş, Postgres'e yazılmamış olurdu. Cache geçersizleştirme de aynı
+ * sebeple yazımdan sonradır. Bu değişmez `rewards.service.spec.ts` ile
+ * sabitlenmiştir.
+ *
+ * **2. Idempotency üç katmanlıdır ve asıl güvence veritabanındadır.**
+ *   - Redis `SET NX` kilidi: aynı anda iki instance giremez
+ *   - `RewardLog(userId, seasonId)` tekil kısıtı: aynı oyuncuya iki ödeme yok
+ *   - Ön-kontrol: sezon zaten dağıtılmışsa hiç başlanmaz (409)
+ *
+ * Kilit tek başına yetmez; TTL dolabilir ya da Redis yeniden başlayabilir.
+ * Veritabanı kısıtı düşmez.
+ */
 import { ConflictException, Inject, Injectable, Logger } from '@nestjs/common';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../infrastructure/redis/redis.module';
@@ -38,18 +58,7 @@ export class RewardsService {
     return `lock:distribute:${seasonId}`;
   }
 
-  /**
-   * Sezon ödüllerini dağıtır.
-   *
-   * Idempotency üç katmanlıdır:
-   *   1. Redis SET NX kilidi — aynı anda iki instance giremez.
-   *   2. RewardLog'daki (userId, seasonId) tekil kısıtı — veritabanı seviyesinde
-   *      aynı oyuncuya iki kez ödeme yapılmasını engeller.
-   *   3. Ön-kontrol — sezon zaten dağıtılmışsa hiç başlamaz.
-   *
-   * Kilit tek başına yeterli değildir: TTL dolması ya da Redis'in yeniden
-   * başlaması kilidi düşürebilir. Asıl güvence veritabanı kısıtıdır.
-   */
+  /** Sezon ödüllerini dağıtır; kilit alınamazsa 409. */
   async distributeSeason(seasonId: string): Promise<DistributionResult> {
     const lock = await this.redis.set(
       this.lockKey(seasonId),

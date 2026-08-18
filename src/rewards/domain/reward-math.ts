@@ -1,9 +1,22 @@
 /**
  * Ödül havuzu paylaştırma matematiği.
  *
- * Saf fonksiyon olarak ayrıldı: para hesabı, veritabanı ve Redis'ten bağımsız
- * olarak test edilebilmelidir. Kuruş kaybı/kazancı gibi hatalar ancak burada
- * doğrudan sınanabilir.
+ * Saf fonksiyon olarak ayrıldı: para hesabı veritabanından ve Redis'ten
+ * bağımsız test edilebilmelidir — kuruş kaybı ancak böyle doğrudan sınanır.
+ *
+ * Bu dosyanın tek kuralı var ve her satır ona uyar: **para hiçbir aşamada
+ * `number`'a düşmez.** Sebep, ikili kayan noktada `0.1 + 0.2 !== 0.3`
+ * olmasıdır; yüzde payları toplanırken havuzdan kuruş sızar. Bu yüzden:
+ *
+ *   - tüm hesap `bigint` kuruş üzerinden yapılır,
+ *   - yüzdeler basis point ile çarpılır (`percentOf`), ara adımda float yok,
+ *   - Postgres'ten gelen `Decimal` değerleri `decimalStringToMinorUnits` ile
+ *     dizgiden ayrıştırılır, `Number()` ile değil,
+ *   - yuvarlama artığı 1. oyuncuya eklenir; dağıtılan toplam havuza TAM eşit
+ *     kalır, kuruş ne kaybolur ne yoktan var olur.
+ *
+ * Aynı disiplin şemada `Decimal(18,4)`, Redis'te `INCRBY` (float değil) ile
+ * sürdürülür. Değişmez, `reward-math.spec.ts` ile sabitlenmiştir.
  */
 
 export const PRIZE_POOL_RATE = 0.02;
@@ -28,13 +41,6 @@ export interface RewardAllocation {
   amountMinor: bigint;
 }
 
-/**
- * Para hesabı tamsayı (kuruş) üzerinden yapılır.
- *
- * Gerekçe: 0.1 + 0.2 !== 0.3 olduğu için ikili kayan noktada yüzde payları
- * toplandığında havuzdan kuruş sızar. Şemada Decimal(18,4) kullanılmasının
- * sebebi de aynıdır. Burada da aynı disiplin korunur.
- */
 const MINOR_UNITS_PER_MAJOR = 100n;
 
 export function toMinorUnits(amount: number): bigint {
@@ -42,16 +48,12 @@ export function toMinorUnits(amount: number): bigint {
 }
 
 /**
- * Ondalık bir para STRING'ini kuruşa çevirir — float'a hiç uğramadan.
+ * Ondalık para dizgisini kuruşa çevirir — float'a uğramadan.
  *
- * `toMinorUnits` `number` aldığı için çağıran taraf değeri önce float'a
- * düşürmek zorunda kalır; Postgres'ten gelen `Decimal(18,4)` değerlerinde
- * bunu yapmak tam da kaçınılan hassasiyet kaybını üretir. Burada dizgi
- * doğrudan ayrıştırılır: tamsayı ve ondalık kısım ayrı ayrı `BigInt`'e
- * çevrilir.
- *
- * Şema 4 ondalık tutar ama para birimi 2 kuruş kullanır; fazla basamaklar
- * en yakın kuruşa yuvarlanır (yarım yukarı).
+ * `toMinorUnits` `number` aldığı için çağıranı float'a zorlar; Postgres'ten
+ * gelen `Decimal` değerlerinde bu tam da kaçınılan kaybı üretir. Şema 4
+ * ondalık tutar, para birimi 2 kuruş kullanır: fazlası en yakın kuruşa
+ * yuvarlanır.
  */
 export function decimalStringToMinorUnits(amount: string): bigint {
   const negative = amount.trimStart().startsWith('-');
