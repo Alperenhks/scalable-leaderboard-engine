@@ -25,8 +25,16 @@ export class PrismaService
     super({
       adapter: new PrismaPg({
         connectionString: config.getOrThrow<string>('DATABASE_URL'),
-        max: 10,
+        // Havuz boyutu ölçümle belirlendi: 10 bağlantıda eşzamanlı yük altında
+        // istekler kuyrukta bekliyordu. Üst sınırsız da bırakılamaz — yatayda
+        // çoğaltılmış her instance kendi havuzunu tutar ve Neon'un bağlantı
+        // limiti toplamda aşılır. `DB_POOL_MAX` ile instance sayısına göre
+        // ayarlanabilir.
+        max: config.get<number>('DB_POOL_MAX', 20),
         connectionTimeoutMillis: 5000,
+        // Boşta kalan bağlantı kapatılır: trafik düştüğünde Neon tarafında
+        // gereksiz bağlantı tutulmaz.
+        idleTimeoutMillis: 30_000,
       }),
     });
   }

@@ -299,6 +299,18 @@ export class LeaderboardService {
   }
 
   /**
+   * Tek oyuncunun profili (ad + ülke) — önce cache, gerekirse Postgres.
+   *
+   * `resolveProfiles`'ın tek kullanıcılık yüzeyi. Ayrı bir Postgres sorgusu
+   * atmak yerine burayı kullanmak, açılış ekranı gibi sık çağrılan uçlarda
+   * bağlantı havuzunu boşa harcamayı önler.
+   */
+  async getProfile(userId: string): Promise<UserProfile | null> {
+    const map = await this.resolveProfiles([userId]);
+    return map.get(userId) ?? null;
+  }
+
+  /**
    * Oyuncunun ülkesini YALNIZCA cache'ten okur.
    *
    * Postgres'e bilinçli olarak düşülmez: skor gönderimi bu mimarinin en sıcak

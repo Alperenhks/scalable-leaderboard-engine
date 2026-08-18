@@ -19,4 +19,8 @@ export const envValidationSchema = Joi.object({
     .required(),
   JWT_SECRET: Joi.string().min(16).required(),
   PORT: Joi.number().port().default(8080),
+  // Instance başına Postgres bağlantı havuzu boyutu. Yatayda çoğaltmada
+  // toplam bağlantı sayısı = instance × bu değer; Neon'un limitine göre
+  // ayarlanır.
+  DB_POOL_MAX: Joi.number().min(1).max(100).default(20),
 });
